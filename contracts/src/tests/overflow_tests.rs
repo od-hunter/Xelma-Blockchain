@@ -231,3 +231,135 @@ fn test_claim_winnings_near_max_succeeds() {
     assert_eq!(client.balance(&user), i128::MAX);
     assert_eq!(client.get_pending_winnings(&user), 0);
 }
+
+// ─── Pending winnings cap tests (Issue #120) ─────────────────────────────────
+
+#[test]
+fn test_pending_winnings_cap_enforced_on_refund() {
+    let (env, _cid, client) = setup();
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let alice = Address::generate(&env);
+
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&alice);
+
+    // Set cap to 50
+    client.set_max_pending_winnings(&Some(50_0000000i128));
+
+    // Alice bets 100 — on refund (price unchanged) pending would be 100 > cap 50
+    client.create_round(&1_0000000u128, &None);
+    client.place_bet(&alice, &100_0000000, &BetSide::Up);
+
+    env.ledger().with_mut(|li| li.sequence_number = 12);
+    let round = client.get_active_round().unwrap();
+
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 1_0000000, // same price → refund
+        timestamp: env.ledger().timestamp(),
+        round_id: round.start_ledger,
+    });
+    assert_eq!(result, Err(Ok(ContractError::PendingWinningsCapExceeded)));
+
+    // Balance unchanged — all-or-nothing guarantee
+    assert_eq!(client.balance(&alice), 900_0000000);
+}
+
+#[test]
+fn test_pending_winnings_cap_enforced_on_winnings() {
+    let (env, _cid, client) = setup();
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&alice);
+    client.mint_initial(&bob);
+
+    // Alice wins 100 + share of bob's 100 = 200; set cap to 100
+    client.set_max_pending_winnings(&Some(100_0000000i128));
+
+    client.create_round(&1_0000000u128, &None);
+    client.place_bet(&alice, &100_0000000, &BetSide::Up);
+    client.place_bet(&bob, &100_0000000, &BetSide::Down);
+
+    env.ledger().with_mut(|li| li.sequence_number = 12);
+    let round = client.get_active_round().unwrap();
+
+    // price went UP — alice wins 200 total, but cap is 100
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 2_0000000,
+        timestamp: env.ledger().timestamp(),
+        round_id: round.start_ledger,
+    });
+    assert_eq!(result, Err(Ok(ContractError::PendingWinningsCapExceeded)));
+}
+
+#[test]
+fn test_pending_winnings_cap_not_exceeded_succeeds() {
+    let (env, _cid, client) = setup();
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&alice);
+    client.mint_initial(&bob);
+
+    // Alice bets 100 UP, bob 100 DOWN → alice wins 200. Set cap to 200 (exactly at cap).
+    client.set_max_pending_winnings(&Some(200_0000000i128));
+
+    client.create_round(&1_0000000u128, &None);
+    client.place_bet(&alice, &100_0000000, &BetSide::Up);
+    client.place_bet(&bob, &100_0000000, &BetSide::Down);
+
+    resolve_updown(&env, &client, 2_0000000, 12);
+
+    // Alice's pending = 200 == cap → OK
+    let pending = client.get_pending_winnings(&alice);
+    assert_eq!(pending, 200_0000000);
+}
+
+#[test]
+fn test_pending_winnings_cap_disabled_large_payout_succeeds() {
+    let (env, _cid, client) = setup();
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&alice);
+    client.mint_initial(&bob);
+
+    // Set then remove cap
+    client.set_max_pending_winnings(&Some(50_0000000i128));
+    client.set_max_pending_winnings(&None);
+
+    client.create_round(&1_0000000u128, &None);
+    client.place_bet(&alice, &100_0000000, &BetSide::Up);
+    client.place_bet(&bob, &100_0000000, &BetSide::Down);
+
+    resolve_updown(&env, &client, 2_0000000, 12);
+
+    // Cap disabled — payout proceeds normally
+    let pending = client.get_pending_winnings(&alice);
+    assert!(pending > 0);
+}
+
+#[test]
+fn test_get_max_pending_winnings_returns_configured_value() {
+    let (env, _cid, client) = setup();
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+
+    client.initialize(&admin, &oracle);
+
+    assert_eq!(client.get_max_pending_winnings(), None);
+    client.set_max_pending_winnings(&Some(500_0000000i128));
+    assert_eq!(client.get_max_pending_winnings(), Some(500_0000000i128));
+    client.set_max_pending_winnings(&None);
+    assert_eq!(client.get_max_pending_winnings(), None);
+}

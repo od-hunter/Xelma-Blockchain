@@ -47,6 +47,14 @@ pub enum DataKey {
     PrecisionPosition(u64, Address),
     /// Ordered participant list for a round: round_id → Vec<Address>
     RoundParticipants(u64),
+    /// Maximum stake allowed per individual bet (None = unlimited)
+    MaxStake,
+    /// Maximum cumulative exposure per user per round (None = unlimited)
+    MaxUserRoundExposure,
+    /// Maximum pending winnings allowed per account (None = unlimited)
+    MaxPendingWinnings,
+    /// Marker for a cancelled round: round_id → true
+    CancelledRound(u64),
 }
 
 /// Represents which side a user bet on

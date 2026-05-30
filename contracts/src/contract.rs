@@ -7,6 +7,10 @@ use crate::types::{
     BetSide, DataKey, OraclePayload, PrecisionPrediction, Round, RoundMode, UserPosition, UserStats,
 };
 
+// ─── Economic control limits ─────────────────────────────────────────────────
+/// Minimum allowed value when setting an economic cap to prevent zero-value lockouts.
+const MIN_CAP_VALUE: i128 = 1;
+
 const DEFAULT_BET_WINDOW_LEDGERS: u32 = 6;
 const DEFAULT_RUN_WINDOW_LEDGERS: u32 = 12;
 const MAX_BET_WINDOW_LEDGERS: u32 = 1_440;
@@ -253,6 +257,108 @@ impl VirtualTokenContract {
         Ok(())
     }
 
+    // ─── Economic controls (Issue #113) ─────────────────────────────────────
+
+    /// Sets the maximum stake allowed per individual bet (admin only).
+    /// Pass `None` to disable the cap.
+    pub fn set_max_stake(env: Env, max_amount: Option<i128>) -> Result<(), ContractError> {
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .ok_or(ContractError::AdminNotSet)?;
+        admin.require_auth();
+        Self::_ensure_not_paused(&env)?;
+
+        if let Some(v) = max_amount {
+            if v < MIN_CAP_VALUE {
+                return Err(ContractError::InvalidBetAmount);
+            }
+            env.storage()
+                .persistent()
+                .set(&DataKey::MaxStake, &v);
+        } else {
+            env.storage().persistent().remove(&DataKey::MaxStake);
+        }
+        Ok(())
+    }
+
+    /// Returns the current maximum stake cap, if set.
+    pub fn get_max_stake(env: Env) -> Option<i128> {
+        env.storage().persistent().get(&DataKey::MaxStake)
+    }
+
+    /// Sets the maximum cumulative exposure a user may have per round (admin only).
+    /// Pass `None` to disable the cap.
+    pub fn set_max_user_exposure(env: Env, max_exposure: Option<i128>) -> Result<(), ContractError> {
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .ok_or(ContractError::AdminNotSet)?;
+        admin.require_auth();
+        Self::_ensure_not_paused(&env)?;
+
+        if let Some(v) = max_exposure {
+            if v < MIN_CAP_VALUE {
+                return Err(ContractError::InvalidBetAmount);
+            }
+            env.storage()
+                .persistent()
+                .set(&DataKey::MaxUserRoundExposure, &v);
+        } else {
+            env.storage()
+                .persistent()
+                .remove(&DataKey::MaxUserRoundExposure);
+        }
+        Ok(())
+    }
+
+    /// Returns the current per-user round exposure cap, if set.
+    pub fn get_max_user_exposure(env: Env) -> Option<i128> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::MaxUserRoundExposure)
+    }
+
+    // ─── Accounting safety (Issue #120) ─────────────────────────────────────
+
+    /// Sets the maximum pending winnings allowed per account (admin only).
+    /// Pass `None` to disable the cap.
+    pub fn set_max_pending_winnings(
+        env: Env,
+        max_pending: Option<i128>,
+    ) -> Result<(), ContractError> {
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .ok_or(ContractError::AdminNotSet)?;
+        admin.require_auth();
+        Self::_ensure_not_paused(&env)?;
+
+        if let Some(v) = max_pending {
+            if v < MIN_CAP_VALUE {
+                return Err(ContractError::InvalidBetAmount);
+            }
+            env.storage()
+                .persistent()
+                .set(&DataKey::MaxPendingWinnings, &v);
+        } else {
+            env.storage()
+                .persistent()
+                .remove(&DataKey::MaxPendingWinnings);
+        }
+        Ok(())
+    }
+
+    /// Returns the current maximum pending winnings cap, if set.
+    pub fn get_max_pending_winnings(env: Env) -> Option<i128> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::MaxPendingWinnings)
+    }
+
     /// Returns user statistics (wins, losses, streaks)
     pub fn get_user_stats(env: Env, user: Address) -> UserStats {
         let key = DataKey::UserStats(user);
@@ -290,12 +396,34 @@ impl VirtualTokenContract {
             return Err(ContractError::InvalidBetAmount);
         }
 
+        // Enforce max stake cap (Issue #113)
+        if let Some(max_stake) = env
+            .storage()
+            .persistent()
+            .get::<_, i128>(&DataKey::MaxStake)
+        {
+            if amount > max_stake {
+                return Err(ContractError::StakeExceedsMax);
+            }
+        }
+
         // Single read of the active round — cache in call scope
         let mut round: Round = env
             .storage()
             .persistent()
             .get(&DataKey::ActiveRound)
             .ok_or(ContractError::NoActiveRound)?;
+
+        // Enforce per-user round exposure cap (Issue #113)
+        if let Some(max_exposure) = env
+            .storage()
+            .persistent()
+            .get::<_, i128>(&DataKey::MaxUserRoundExposure)
+        {
+            if amount > max_exposure {
+                return Err(ContractError::ExposureCapExceeded);
+            }
+        }
 
         // Verify round is in Up/Down mode
         if round.mode != RoundMode::UpDown {
@@ -396,6 +524,17 @@ impl VirtualTokenContract {
             return Err(ContractError::InvalidBetAmount);
         }
 
+        // Enforce max stake cap (Issue #113)
+        if let Some(max_stake) = env
+            .storage()
+            .persistent()
+            .get::<_, i128>(&DataKey::MaxStake)
+        {
+            if amount > max_stake {
+                return Err(ContractError::StakeExceedsMax);
+            }
+        }
+
         // Validate price scale (must be 4 decimal places, max value 9999 for 0.9999)
         // Reasonable max: 99999999 (9999.9999 XLM)
         if predicted_price > 99_999_999 {
@@ -408,6 +547,17 @@ impl VirtualTokenContract {
             .persistent()
             .get(&DataKey::ActiveRound)
             .ok_or(ContractError::NoActiveRound)?;
+
+        // Enforce per-user round exposure cap (Issue #113)
+        if let Some(max_exposure) = env
+            .storage()
+            .persistent()
+            .get::<_, i128>(&DataKey::MaxUserRoundExposure)
+        {
+            if amount > max_exposure {
+                return Err(ContractError::ExposureCapExceeded);
+            }
+        }
 
         // Verify round is in Precision mode
         if round.mode != RoundMode::Precision {
@@ -811,12 +961,7 @@ impl VirtualTokenContract {
         for i in 0..keys.len() {
             if let Some(user) = keys.get(i) {
                 if let Some(position) = positions.get(user.clone()) {
-                    let key = DataKey::PendingWinnings(user);
-                    let existing_pending: i128 = env.storage().persistent().get(&key).unwrap_or(0);
-                    let new_pending = existing_pending
-                        .checked_add(position.amount)
-                        .ok_or(ContractError::Overflow)?;
-                    env.storage().persistent().set(&key, &new_pending);
+                    Self::_accumulate_pending(env, user, position.amount)?;
                 }
             }
         }
@@ -849,14 +994,7 @@ impl VirtualTokenContract {
                             .checked_add(share)
                             .ok_or(ContractError::Overflow)?;
 
-                        let key = DataKey::PendingWinnings(user.clone());
-                        let existing_pending: i128 =
-                            env.storage().persistent().get(&key).unwrap_or(0);
-                        let new_pending = existing_pending
-                            .checked_add(payout)
-                            .ok_or(ContractError::Overflow)?;
-                        env.storage().persistent().set(&key, &new_pending);
-
+                        Self::_accumulate_pending(env, user.clone(), payout)?;
                         Self::_update_stats_win(env, user)?;
                     } else {
                         Self::_update_stats_loss(env, user)?;
@@ -956,9 +1094,6 @@ impl VirtualTokenContract {
             // Award to each winner
             for i in 0..winners.len() {
                 if let Some(winner) = winners.get(i) {
-                    let key = DataKey::PendingWinnings(winner.user.clone());
-                    let existing_pending: i128 = env.storage().persistent().get(&key).unwrap_or(0);
-
                     // First winner (lowest XDR-ordered Address) absorbs the remainder.
                     let payout = if i == 0 {
                         payout_per_winner
@@ -968,11 +1103,7 @@ impl VirtualTokenContract {
                         payout_per_winner
                     };
 
-                    let new_pending = existing_pending
-                        .checked_add(payout)
-                        .ok_or(ContractError::Overflow)?;
-                    env.storage().persistent().set(&key, &new_pending);
-
+                    Self::_accumulate_pending(env, winner.user.clone(), payout)?;
                     Self::_update_stats_win(env, winner.user.clone())?;
                 }
             }
@@ -1056,15 +1187,12 @@ impl VirtualTokenContract {
             // Award to each winner — all arithmetic checked before writing
             for i in 0..winners.len() {
                 if let Some(winner) = winners.get(i) {
-                    let key = DataKey::PendingWinnings(winner.user.clone());
-                    let existing_pending: i128 = env.storage().persistent().get(&key).unwrap_or(0);
                     let payout = if i == 0 {
                         Self::payout_add(payout_per_winner, remainder)?
                     } else {
                         payout_per_winner
                     };
-                    let new_pending = Self::payout_add(existing_pending, payout)?;
-                    env.storage().persistent().set(&key, &new_pending);
+                    Self::_accumulate_pending(env, winner.user.clone(), payout)?;
                     Self::_update_stats_win(env, winner.user.clone())?;
                 }
             }
@@ -1080,6 +1208,98 @@ impl VirtualTokenContract {
         }
 
         Ok(())
+    }
+
+    // ─── Lifecycle resilience (Issue #111) ──────────────────────────────────
+
+    /// Cancels the active round and deterministically refunds all participant stakes.
+    ///
+    /// Only admin may cancel. Intended for oracle-unavailable or emergency recovery
+    /// scenarios. After cancellation:
+    ///  - All participant stakes are moved to their pending winnings.
+    ///  - The active round is removed; no future settlement is possible.
+    ///  - The round ID is marked cancelled to prevent any replay.
+    pub fn cancel_round(env: Env, reason: u32) -> Result<(), ContractError> {
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .ok_or(ContractError::AdminNotSet)?;
+        admin.require_auth();
+
+        let round: Round = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ActiveRound)
+            .ok_or(ContractError::RoundNotCancellable)?;
+
+        let round_id = round.round_id;
+
+        // Refund all participants based on round mode
+        let participants: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::RoundParticipants(round_id))
+            .unwrap_or(Vec::new(&env));
+
+        match round.mode {
+            RoundMode::UpDown => {
+                for i in 0..participants.len() {
+                    if let Some(user) = participants.get(i) {
+                        let pos_key = DataKey::Position(round_id, user.clone());
+                        if let Some(pos) =
+                            env.storage().persistent().get::<_, UserPosition>(&pos_key)
+                        {
+                            Self::_accumulate_pending(&env, user, pos.amount)?;
+                            env.storage().persistent().remove(&pos_key);
+                        }
+                    }
+                }
+            }
+            RoundMode::Precision => {
+                for i in 0..participants.len() {
+                    if let Some(user) = participants.get(i) {
+                        let pred_key = DataKey::PrecisionPosition(round_id, user.clone());
+                        if let Some(pred) = env
+                            .storage()
+                            .persistent()
+                            .get::<_, PrecisionPrediction>(&pred_key)
+                        {
+                            Self::_accumulate_pending(&env, user, pred.amount)?;
+                            env.storage().persistent().remove(&pred_key);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Clean up participant list and mark round as cancelled
+        env.storage()
+            .persistent()
+            .remove(&DataKey::RoundParticipants(round_id));
+        env.storage()
+            .persistent()
+            .set(&DataKey::CancelledRound(round_id), &true);
+        env.storage().persistent().remove(&DataKey::ActiveRound);
+
+        // Emit cancellation event
+        // Topic: ("round", "cancelled")
+        // Payload: (round_id: u64, reason: u32, pool_up: i128, pool_down: i128)
+        #[allow(deprecated)]
+        env.events().publish(
+            (symbol_short!("round"), symbol_short!("cancelled")),
+            (round_id, reason, round.pool_up, round.pool_down),
+        );
+
+        Ok(())
+    }
+
+    /// Returns true if the given round_id was cancelled.
+    pub fn is_round_cancelled(env: Env, round_id: u64) -> bool {
+        env.storage()
+            .persistent()
+            .get(&DataKey::CancelledRound(round_id))
+            .unwrap_or(false)
     }
 
     /// Claims pending winnings and adds to balance
@@ -1126,11 +1346,7 @@ impl VirtualTokenContract {
                 let pos_key = DataKey::Position(round_id, user.clone());
                 if let Some(position) = env.storage().persistent().get::<_, UserPosition>(&pos_key)
                 {
-                    let key = DataKey::PendingWinnings(user.clone());
-                    let existing_pending: i128 = env.storage().persistent().get(&key).unwrap_or(0);
-                    // Compute before writing — all-or-nothing guarantee
-                    let new_pending = Self::payout_add(existing_pending, position.amount)?;
-                    env.storage().persistent().set(&key, &new_pending);
+                    Self::_accumulate_pending(env, user, position.amount)?;
                 }
             }
         }
@@ -1164,12 +1380,7 @@ impl VirtualTokenContract {
                         let share = share_numerator / winning_pool;
                         let payout = Self::payout_add(position.amount, share)?;
 
-                        let key = DataKey::PendingWinnings(user.clone());
-                        let existing_pending: i128 =
-                            env.storage().persistent().get(&key).unwrap_or(0);
-                        let new_pending = Self::payout_add(existing_pending, payout)?;
-                        env.storage().persistent().set(&key, &new_pending);
-
+                        Self::_accumulate_pending(env, user.clone(), payout)?;
                         Self::_update_stats_win(env, user)?;
                     } else {
                         Self::_update_stats_loss(env, user)?;
@@ -1300,5 +1511,33 @@ impl VirtualTokenContract {
     #[inline(always)]
     fn payout_mul(a: i128, b: i128) -> Result<i128, ContractError> {
         a.checked_mul(b).ok_or(ContractError::PayoutOverflow)
+    }
+
+    /// Accumulates `amount` into a user's pending winnings, enforcing the cap if set (Issue #120).
+    ///
+    /// Reads and writes `DataKey::PendingWinnings(user)` in one place, ensuring the cap
+    /// check and overflow protection are applied consistently across all payout paths.
+    fn _accumulate_pending(
+        env: &Env,
+        user: Address,
+        amount: i128,
+    ) -> Result<(), ContractError> {
+        let key = DataKey::PendingWinnings(user);
+        let existing: i128 = env.storage().persistent().get(&key).unwrap_or(0);
+        let new_pending = Self::payout_add(existing, amount)?;
+
+        // Enforce pending winnings cap if configured
+        if let Some(cap) = env
+            .storage()
+            .persistent()
+            .get::<_, i128>(&DataKey::MaxPendingWinnings)
+        {
+            if new_pending > cap {
+                return Err(ContractError::PendingWinningsCapExceeded);
+            }
+        }
+
+        env.storage().persistent().set(&key, &new_pending);
+        Ok(())
     }
 }

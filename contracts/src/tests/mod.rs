@@ -1,6 +1,7 @@
 //! Test modules for the XLM Price Prediction Market contract.
 
 mod betting;
+mod chaos_recovery;
 mod edge_cases;
 mod guard_tests;
 mod initialization;

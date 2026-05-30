@@ -57,4 +57,14 @@ pub enum ContractError {
     FutureOracleData = 24,
     /// Arithmetic overflow in payout accumulation — no funds moved
     PayoutOverflow = 25,
+    /// Round has been cancelled and cannot be resolved
+    RoundCancelled = 26,
+    /// Round cannot be cancelled (no active round or already resolved)
+    RoundNotCancellable = 27,
+    /// Bet amount exceeds the configured maximum stake
+    StakeExceedsMax = 28,
+    /// User's cumulative exposure in this round exceeds the configured cap
+    ExposureCapExceeded = 29,
+    /// Pending winnings accumulation would exceed the configured cap
+    PendingWinningsCapExceeded = 30,
 }
