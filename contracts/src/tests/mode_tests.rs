@@ -794,3 +794,85 @@ fn test_windows_update_event() {
         .count();
     assert_eq!(windows_events, 1, "Should have 1 windows updated event");
 }
+
+// ─── Economic controls for precision mode (Issue #113) ────────────────────────
+
+#[test]
+fn test_precision_prediction_exceeds_max_stake_fails() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&user);
+    client.set_max_stake(&Some(50_0000000i128));
+    client.create_round(&1_0000000, &Some(1));
+
+    let result = client.try_place_precision_prediction(&user, &100_0000000, &2297u128);
+    assert_eq!(result, Err(Ok(ContractError::StakeExceedsMax)));
+}
+
+#[test]
+fn test_precision_prediction_at_max_stake_boundary_succeeds() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&user);
+    client.set_max_stake(&Some(100_0000000i128));
+    client.create_round(&1_0000000, &Some(1));
+
+    // Exactly at cap — must succeed
+    client.place_precision_prediction(&user, &100_0000000, &2297u128);
+    assert_eq!(client.balance(&user), 900_0000000);
+}
+
+#[test]
+fn test_precision_prediction_exposure_cap_exceeded_fails() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&user);
+    client.set_max_user_exposure(&Some(75_0000000i128));
+    client.create_round(&1_0000000, &Some(1));
+
+    let result = client.try_place_precision_prediction(&user, &80_0000000, &2297u128);
+    assert_eq!(result, Err(Ok(ContractError::ExposureCapExceeded)));
+}
+
+#[test]
+fn test_caps_disabled_precision_prediction_succeeds() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&user);
+    // No caps configured — large bet allowed
+    client.create_round(&1_0000000, &Some(1));
+    client.place_precision_prediction(&user, &500_0000000, &2297u128);
+    assert_eq!(client.balance(&user), 500_0000000);
+}

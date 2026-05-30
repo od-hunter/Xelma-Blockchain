@@ -586,3 +586,185 @@ fn test_no_mint_event_on_second_call() {
     });
     assert!(mint_event.is_none(), "Should not emit second mint event");
 }
+
+// ─── Cancel round tests (Issue #111) ─────────────────────────────────────────
+
+#[test]
+fn test_cancel_round_refunds_updown_participants() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&alice);
+    client.mint_initial(&bob);
+
+    client.create_round(&1_0000000, &None);
+    client.place_bet(&alice, &100_0000000, &BetSide::Up);
+    client.place_bet(&bob, &200_0000000, &BetSide::Down);
+
+    // Admin cancels the round
+    client.cancel_round(&0u32);
+
+    // No active round after cancellation
+    assert_eq!(client.get_active_round(), None);
+
+    // Both participants are fully refunded
+    assert_eq!(client.get_pending_winnings(&alice), 100_0000000);
+    assert_eq!(client.get_pending_winnings(&bob), 200_0000000);
+}
+
+#[test]
+fn test_cancel_round_refunds_precision_participants() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&alice);
+    client.mint_initial(&bob);
+
+    client.create_round(&1_0000000, &Some(1)); // Precision mode
+    client.place_precision_prediction(&alice, &150_0000000, &2297u128);
+    client.place_precision_prediction(&bob, &250_0000000, &2300u128);
+
+    client.cancel_round(&1u32);
+
+    assert_eq!(client.get_active_round(), None);
+    assert_eq!(client.get_pending_winnings(&alice), 150_0000000);
+    assert_eq!(client.get_pending_winnings(&bob), 250_0000000);
+}
+
+#[test]
+fn test_cancel_round_marks_round_cancelled() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+    client.create_round(&1_0000000, &None);
+
+    let round_id = client.get_active_round().unwrap().round_id;
+    assert!(!client.is_round_cancelled(&round_id));
+
+    client.cancel_round(&0u32);
+    assert!(client.is_round_cancelled(&round_id));
+}
+
+#[test]
+fn test_cancel_round_no_active_round_fails() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+
+    // No active round
+    let result = client.try_cancel_round(&0u32);
+    assert_eq!(result, Err(Ok(ContractError::RoundNotCancellable)));
+}
+
+#[test]
+fn test_cancel_round_emits_event() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+    client.create_round(&1_0000000, &None);
+    client.cancel_round(&42u32);
+
+    let events = env.events().all();
+    let cancel_event = events.iter().find(|e| {
+        let (_contract, topics, _data) = e;
+        topics.len() == 2
+            && topics.get(0).unwrap().try_into_val(&env) == Ok(symbol_short!("round"))
+            && topics.get(1).unwrap().try_into_val(&env) == Ok(symbol_short!("cancelled"))
+    });
+    assert!(
+        cancel_event.is_some(),
+        "Cancellation event should be emitted"
+    );
+}
+
+#[test]
+fn test_cancelled_round_allows_new_round() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+    client.create_round(&1_0000000, &None);
+    client.cancel_round(&0u32);
+
+    // A new round can be started after cancellation
+    client.create_round(&1_2000000, &None);
+    let new_round = client.get_active_round().unwrap();
+    assert_eq!(new_round.price_start, 1_2000000);
+}
+
+#[test]
+fn test_cancel_round_full_refund_equals_pool() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    let charlie = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&alice);
+    client.mint_initial(&bob);
+    client.mint_initial(&charlie);
+
+    client.create_round(&1_0000000, &None);
+    client.place_bet(&alice, &100_0000000, &BetSide::Up);
+    client.place_bet(&bob, &200_0000000, &BetSide::Up);
+    client.place_bet(&charlie, &300_0000000, &BetSide::Down);
+
+    let round = client.get_active_round().unwrap();
+    let total_pool = round.pool_up + round.pool_down;
+
+    client.cancel_round(&0u32);
+
+    let total_refunded = client.get_pending_winnings(&alice)
+        + client.get_pending_winnings(&bob)
+        + client.get_pending_winnings(&charlie);
+
+    assert_eq!(
+        total_refunded, total_pool,
+        "Total refunds must equal total pool"
+    );
+}

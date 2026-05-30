@@ -2,7 +2,6 @@
 target/
 **/*.rs.bk
 *.pdb
-Cargo.lock
 
 # Rust Test Artifacts
 contracts/test_snapshots/

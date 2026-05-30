@@ -243,3 +243,139 @@ fn test_multiple_bets_emit_separate_events() {
     });
     assert!(bet_event, "Third bet should emit event");
 }
+
+// ─── Economic controls tests (Issue #113) ─────────────────────────────────────
+
+#[test]
+fn test_bet_exceeds_max_stake_fails() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&user);
+
+    // Set max stake to 50
+    client.set_max_stake(&Some(50_0000000i128));
+    client.create_round(&1_0000000, &None);
+
+    // Exactly at cap — should succeed
+    client.place_bet(&user, &50_0000000, &BetSide::Up);
+
+    // Over cap — should fail
+    let user2 = Address::generate(&env);
+    client.mint_initial(&user2);
+    let result = client.try_place_bet(&user2, &51_0000000, &BetSide::Up);
+    assert_eq!(result, Err(Ok(ContractError::StakeExceedsMax)));
+}
+
+#[test]
+fn test_bet_at_max_stake_boundary_succeeds() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&user);
+    client.set_max_stake(&Some(100_0000000i128));
+    client.create_round(&1_0000000, &None);
+
+    // Exactly at cap — must succeed
+    client.place_bet(&user, &100_0000000, &BetSide::Down);
+    assert_eq!(client.balance(&user), 900_0000000);
+}
+
+#[test]
+fn test_bet_no_max_stake_cap_disabled() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&user);
+
+    // Set cap then disable it
+    client.set_max_stake(&Some(50_0000000i128));
+    client.set_max_stake(&None);
+
+    client.create_round(&1_0000000, &None);
+
+    // Should succeed — cap is disabled
+    client.place_bet(&user, &500_0000000, &BetSide::Up);
+    assert_eq!(client.balance(&user), 500_0000000);
+}
+
+#[test]
+fn test_exposure_cap_exceeded_fails() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&user);
+    client.set_max_user_exposure(&Some(80_0000000i128));
+    client.create_round(&1_0000000, &None);
+
+    let result = client.try_place_bet(&user, &100_0000000, &BetSide::Up);
+    assert_eq!(result, Err(Ok(ContractError::ExposureCapExceeded)));
+}
+
+#[test]
+fn test_exposure_cap_at_boundary_succeeds() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&user);
+    client.set_max_user_exposure(&Some(100_0000000i128));
+    client.create_round(&1_0000000, &None);
+
+    // Exactly at cap — must succeed
+    client.place_bet(&user, &100_0000000, &BetSide::Up);
+    assert_eq!(client.balance(&user), 900_0000000);
+}
+
+#[test]
+fn test_get_max_stake_returns_configured_value() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&admin, &oracle);
+
+    assert_eq!(client.get_max_stake(), None);
+    client.set_max_stake(&Some(200_0000000i128));
+    assert_eq!(client.get_max_stake(), Some(200_0000000i128));
+    client.set_max_stake(&None);
+    assert_eq!(client.get_max_stake(), None);
+}
