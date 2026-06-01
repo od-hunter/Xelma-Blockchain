@@ -568,6 +568,7 @@ We welcome contributions from the community! Start with the maintainer workflow 
 - [CONTRIBUTING.md](./CONTRIBUTING.md)
 - [GOVERNANCE.md](./GOVERNANCE.md)
 - [SUPPORT.md](./SUPPORT.md)
+- [COMPATIBILITY_POLICY.md](./COMPATIBILITY_POLICY.md) — ABI/storage/event versioning rules
 - [CODEOWNERS](./.github/CODEOWNERS)
 
 Here's how you can help:
