@@ -16,6 +16,12 @@ const DEFAULT_RUN_WINDOW_LEDGERS: u32 = 12;
 const MAX_BET_WINDOW_LEDGERS: u32 = 1_440;
 const MAX_RUN_WINDOW_LEDGERS: u32 = 2_880;
 
+// ─── Start-price bounds (Issue #119) ─────────────────────────────────────────
+/// Minimum start price in protocol units — prevents zero-value and dust rounds.
+const MIN_START_PRICE: u128 = 1;
+/// Maximum start price in protocol units — guards against overflow in payout math.
+const MAX_START_PRICE: u128 = 1_000_000_000_000_000_000;
+
 #[contract]
 pub struct VirtualTokenContract;
 
@@ -91,8 +97,11 @@ impl VirtualTokenContract {
         start_price: u128,
         mode: Option<u32>,
     ) -> Result<(), ContractError> {
-        if start_price == 0 {
-            return Err(ContractError::InvalidPrice);
+        if start_price < MIN_START_PRICE {
+            return Err(ContractError::StartPriceTooLow);
+        }
+        if start_price > MAX_START_PRICE {
+            return Err(ContractError::StartPriceTooHigh);
         }
 
         // Default to Up/Down mode (0) if not specified
@@ -823,7 +832,15 @@ impl VirtualTokenContract {
         // Branch based on round mode
         match round.mode {
             RoundMode::UpDown => {
-                Self::_resolve_updown_mode(&env, &round, payload.price)?;
+                let one_sided = Self::_resolve_updown_mode(&env, &round, payload.price)?;
+                if one_sided {
+                    // Emit here (public scope, env: Env) so the event is captured in tests.
+                    #[allow(deprecated)]
+                    env.events().publish(
+                        (symbol_short!("pool"), symbol_short!("onesided")),
+                        (round_id, round.pool_up, round.pool_down),
+                    );
+                }
             }
             RoundMode::Precision => {
                 Self::_resolve_precision_mode(&env, round_id, payload.price)?;
@@ -880,11 +897,13 @@ impl VirtualTokenContract {
     /// Migration fallback: if the participant list is empty but the legacy
     /// `UpDownPositions` map is present, the resolver iterates the legacy map
     /// — preserves correctness for any in-flight pre-migration round.
+    /// Returns `true` when a one-sided pool was detected (winning side exists but
+    /// losing pool is empty). The caller is responsible for emitting the event.
     fn _resolve_updown_mode(
         env: &Env,
         round: &Round,
         final_price: u128,
-    ) -> Result<(), ContractError> {
+    ) -> Result<bool, ContractError> {
         let participants: Vec<Address> = env
             .storage()
             .persistent()
@@ -895,8 +914,13 @@ impl VirtualTokenContract {
         let price_went_down = final_price < round.price_start;
         let price_unchanged = final_price == round.price_start;
 
+        // One-sided liquidity: winning side exists but losing pool is empty.
+        // Policy: refund all participants — no fund loss, transparent outcome.
+        let is_one_sided = (price_went_up && round.pool_down == 0 && round.pool_up > 0)
+            || (price_went_down && round.pool_up == 0 && round.pool_down > 0);
+
         if !participants.is_empty() {
-            if price_unchanged {
+            if price_unchanged || is_one_sided {
                 Self::_record_refunds_indexed(env, round.round_id, &participants)?;
             } else if price_went_up {
                 Self::_record_winnings_indexed(
@@ -947,7 +971,7 @@ impl VirtualTokenContract {
             }
         }
 
-        Ok(())
+        Ok(is_one_sided)
     }
 
     /// Legacy refund path — reads the bulk Map blob.

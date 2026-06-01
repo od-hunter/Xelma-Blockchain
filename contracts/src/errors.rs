@@ -67,4 +67,8 @@ pub enum ContractError {
     ExposureCapExceeded = 29,
     /// Pending winnings accumulation would exceed the configured cap
     PendingWinningsCapExceeded = 30,
+    /// Start price is below the minimum allowed value
+    StartPriceTooLow = 31,
+    /// Start price exceeds the maximum allowed value
+    StartPriceTooHigh = 32,
 }
