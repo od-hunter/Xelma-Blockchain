@@ -1134,4 +1134,3 @@ fn test_precision_commit_reveal_double_bet_fails() {
     let result = client.try_place_precision_prediction(&user, &50_0000000, &2297);
     assert_eq!(result, Err(Ok(ContractError::AlreadyBet)));
 }
-

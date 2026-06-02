@@ -1618,9 +1618,19 @@ fn test_precision_remainder_goes_to_lexicographically_lowest_winner() {
 
     // Determine which address is lexicographically lowest
     let (lowest_user, other_user, bet_lowest, bet_other) = if user_a < user_b {
-        (user_a.clone(), user_b.clone(), 100_0000001i128, 100_0000000i128)
+        (
+            user_a.clone(),
+            user_b.clone(),
+            100_0000001i128,
+            100_0000000i128,
+        )
     } else {
-        (user_b.clone(), user_a.clone(), 100_0000001i128, 100_0000000i128)
+        (
+            user_b.clone(),
+            user_a.clone(),
+            100_0000001i128,
+            100_0000000i128,
+        )
     };
 
     // Both commit the same guess (2000)
@@ -1670,4 +1680,3 @@ fn test_precision_remainder_goes_to_lexicographically_lowest_winner() {
     assert_eq!(client.get_pending_winnings(&lowest_user), 100_0000001);
     assert_eq!(client.get_pending_winnings(&other_user), 100_0000000);
 }
-

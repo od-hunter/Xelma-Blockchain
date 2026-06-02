@@ -1,11 +1,14 @@
 //! Core contract implementation for the XLM Price Prediction Market.
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, symbol_short, Address, Env, Map, Vec, Bytes, BytesN};
 use soroban_sdk::xdr::ToXdr;
+use soroban_sdk::{
+    contract, contractimpl, panic_with_error, symbol_short, Address, Bytes, BytesN, Env, Map, Vec,
+};
 
 use crate::errors::ContractError;
 use crate::types::{
-    BetSide, DataKey, OraclePayload, PrecisionPrediction, PrecisionCommitment, Round, RoundMode, UserPosition, UserStats,
+    BetSide, DataKey, OraclePayload, PrecisionCommitment, PrecisionPrediction, Round, RoundMode,
+    UserPosition, UserStats,
 };
 
 // ─── Economic control limits ─────────────────────────────────────────────────
@@ -577,7 +580,8 @@ impl VirtualTokenContract {
         // O(1) duplicate-prediction check — single composite key read
         let pred_key = DataKey::PrecisionPosition(round.round_id, user.clone());
         let commit_key = DataKey::PrecisionCommitment(round.round_id, user.clone());
-        if env.storage().persistent().has(&pred_key) || env.storage().persistent().has(&commit_key) {
+        if env.storage().persistent().has(&pred_key) || env.storage().persistent().has(&commit_key)
+        {
             return Err(ContractError::AlreadyBet);
         }
 
@@ -691,7 +695,8 @@ impl VirtualTokenContract {
         // Check duplicate bet or commitment
         let pred_key = DataKey::PrecisionPosition(round.round_id, user.clone());
         let commit_key = DataKey::PrecisionCommitment(round.round_id, user.clone());
-        if env.storage().persistent().has(&pred_key) || env.storage().persistent().has(&commit_key) {
+        if env.storage().persistent().has(&pred_key) || env.storage().persistent().has(&commit_key)
+        {
             return Err(ContractError::AlreadyBet);
         }
 

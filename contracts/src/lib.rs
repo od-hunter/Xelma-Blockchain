@@ -19,4 +19,6 @@ mod tests;
 
 pub use contract::VirtualTokenContract;
 pub use errors::ContractError;
-pub use types::{BetSide, DataKey, Round, UserPosition, UserStats, PrecisionPrediction, PrecisionCommitment};
+pub use types::{
+    BetSide, DataKey, PrecisionCommitment, PrecisionPrediction, Round, UserPosition, UserStats,
+};

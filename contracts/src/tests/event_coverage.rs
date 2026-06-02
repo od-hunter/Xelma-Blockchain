@@ -2,12 +2,12 @@
 
 use crate::contract::{VirtualTokenContract, VirtualTokenContractClient};
 use crate::types::{BetSide, OraclePayload, RoundMode};
+use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Events, Ledger as _},
     Address, Bytes, BytesN, Env, IntoVal, TryIntoVal,
 };
-use soroban_sdk::xdr::ToXdr;
 
 fn setup() -> (Env, Address, Address, VirtualTokenContractClient<'static>) {
     let env = Env::default();
@@ -32,8 +32,14 @@ fn test_event_coverage_mint_initial() {
     let (_contract, topics, data) = last_event;
 
     assert_eq!(topics.len(), 2);
-    assert_eq!(topics.get(0).unwrap().try_into_val(&env), Ok(symbol_short!("mint")));
-    assert_eq!(topics.get(1).unwrap().try_into_val(&env), Ok(symbol_short!("initial")));
+    assert_eq!(
+        topics.get(0).unwrap().try_into_val(&env),
+        Ok(symbol_short!("mint"))
+    );
+    assert_eq!(
+        topics.get(1).unwrap().try_into_val(&env),
+        Ok(symbol_short!("initial"))
+    );
     assert_eq!(data.try_into_val(&env), Ok((user, 1000_0000000i128)));
 }
 
@@ -48,9 +54,18 @@ fn test_event_coverage_create_round() {
     let (_contract, topics, data) = last_event;
 
     assert_eq!(topics.len(), 2);
-    assert_eq!(topics.get(0).unwrap().try_into_val(&env), Ok(symbol_short!("round")));
-    assert_eq!(topics.get(1).unwrap().try_into_val(&env), Ok(symbol_short!("created")));
-    assert_eq!(data.try_into_val(&env), Ok((1u64, 1_0000000u128, 0u32, 6u32, 12u32, 0u32)));
+    assert_eq!(
+        topics.get(0).unwrap().try_into_val(&env),
+        Ok(symbol_short!("round"))
+    );
+    assert_eq!(
+        topics.get(1).unwrap().try_into_val(&env),
+        Ok(symbol_short!("created"))
+    );
+    assert_eq!(
+        data.try_into_val(&env),
+        Ok((1u64, 1_0000000u128, 0u32, 6u32, 12u32, 0u32))
+    );
 }
 
 #[test]
@@ -64,8 +79,14 @@ fn test_event_coverage_set_windows() {
     let (_contract, topics, data) = last_event;
 
     assert_eq!(topics.len(), 2);
-    assert_eq!(topics.get(0).unwrap().try_into_val(&env), Ok(symbol_short!("windows")));
-    assert_eq!(topics.get(1).unwrap().try_into_val(&env), Ok(symbol_short!("updated")));
+    assert_eq!(
+        topics.get(0).unwrap().try_into_val(&env),
+        Ok(symbol_short!("windows"))
+    );
+    assert_eq!(
+        topics.get(1).unwrap().try_into_val(&env),
+        Ok(symbol_short!("updated"))
+    );
     assert_eq!(data.try_into_val(&env), Ok((10u32, 20u32)));
 }
 
@@ -83,9 +104,18 @@ fn test_event_coverage_place_bet() {
     let (_contract, topics, data) = last_event;
 
     assert_eq!(topics.len(), 2);
-    assert_eq!(topics.get(0).unwrap().try_into_val(&env), Ok(symbol_short!("bet")));
-    assert_eq!(topics.get(1).unwrap().try_into_val(&env), Ok(symbol_short!("placed")));
-    assert_eq!(data.try_into_val(&env), Ok((user, 1u64, 100_0000000i128, 0u32)));
+    assert_eq!(
+        topics.get(0).unwrap().try_into_val(&env),
+        Ok(symbol_short!("bet"))
+    );
+    assert_eq!(
+        topics.get(1).unwrap().try_into_val(&env),
+        Ok(symbol_short!("placed"))
+    );
+    assert_eq!(
+        data.try_into_val(&env),
+        Ok((user, 1u64, 100_0000000i128, 0u32))
+    );
 }
 
 #[test]
@@ -110,9 +140,18 @@ fn test_event_coverage_commit_and_reveal() {
     let (_contract, topics, data) = last_event;
 
     assert_eq!(topics.len(), 2);
-    assert_eq!(topics.get(0).unwrap().try_into_val(&env), Ok(symbol_short!("commit")));
-    assert_eq!(topics.get(1).unwrap().try_into_val(&env), Ok(symbol_short!("predict")));
-    assert_eq!(data.try_into_val(&env), Ok((user.clone(), 1u64, committed_hash, 100_0000000i128)));
+    assert_eq!(
+        topics.get(0).unwrap().try_into_val(&env),
+        Ok(symbol_short!("commit"))
+    );
+    assert_eq!(
+        topics.get(1).unwrap().try_into_val(&env),
+        Ok(symbol_short!("predict"))
+    );
+    assert_eq!(
+        data.try_into_val(&env),
+        Ok((user.clone(), 1u64, committed_hash, 100_0000000i128))
+    );
 
     // Move ledger beyond bet window to allow reveal
     env.ledger().with_mut(|li| {
@@ -126,9 +165,18 @@ fn test_event_coverage_commit_and_reveal() {
     let (_contract, topics, data) = last_event;
 
     assert_eq!(topics.len(), 2);
-    assert_eq!(topics.get(0).unwrap().try_into_val(&env), Ok(symbol_short!("reveal")));
-    assert_eq!(topics.get(1).unwrap().try_into_val(&env), Ok(symbol_short!("predict")));
-    assert_eq!(data.try_into_val(&env), Ok((user, 1u64, price, 100_0000000i128)));
+    assert_eq!(
+        topics.get(0).unwrap().try_into_val(&env),
+        Ok(symbol_short!("reveal"))
+    );
+    assert_eq!(
+        topics.get(1).unwrap().try_into_val(&env),
+        Ok(symbol_short!("predict"))
+    );
+    assert_eq!(
+        data.try_into_val(&env),
+        Ok((user, 1u64, price, 100_0000000i128))
+    );
 }
 
 #[test]
@@ -156,8 +204,14 @@ fn test_event_coverage_resolve_round() {
     let (_contract, topics, data) = last_event;
 
     assert_eq!(topics.len(), 2);
-    assert_eq!(topics.get(0).unwrap().try_into_val(&env), Ok(symbol_short!("round")));
-    assert_eq!(topics.get(1).unwrap().try_into_val(&env), Ok(symbol_short!("resolved")));
+    assert_eq!(
+        topics.get(0).unwrap().try_into_val(&env),
+        Ok(symbol_short!("round"))
+    );
+    assert_eq!(
+        topics.get(1).unwrap().try_into_val(&env),
+        Ok(symbol_short!("resolved"))
+    );
     assert_eq!(data.try_into_val(&env), Ok((1u64, 1_2000000u128, 0u32)));
 }
 
@@ -173,8 +227,14 @@ fn test_event_coverage_cancel_round() {
     let (_contract, topics, data) = last_event;
 
     assert_eq!(topics.len(), 2);
-    assert_eq!(topics.get(0).unwrap().try_into_val(&env), Ok(symbol_short!("round")));
-    assert_eq!(topics.get(1).unwrap().try_into_val(&env), Ok(symbol_short!("cancelled")));
+    assert_eq!(
+        topics.get(0).unwrap().try_into_val(&env),
+        Ok(symbol_short!("round"))
+    );
+    assert_eq!(
+        topics.get(1).unwrap().try_into_val(&env),
+        Ok(symbol_short!("cancelled"))
+    );
     assert_eq!(data.try_into_val(&env), Ok((1u64, 99u32, 0i128, 0i128)));
 }
 
@@ -204,7 +264,13 @@ fn test_event_coverage_claim_winnings() {
     let (_contract, topics, data) = last_event;
 
     assert_eq!(topics.len(), 2);
-    assert_eq!(topics.get(0).unwrap().try_into_val(&env), Ok(symbol_short!("claim")));
-    assert_eq!(topics.get(1).unwrap().try_into_val(&env), Ok(symbol_short!("winnings")));
+    assert_eq!(
+        topics.get(0).unwrap().try_into_val(&env),
+        Ok(symbol_short!("claim"))
+    );
+    assert_eq!(
+        topics.get(1).unwrap().try_into_val(&env),
+        Ok(symbol_short!("winnings"))
+    );
     assert_eq!(data.try_into_val(&env), Ok((user, 100_0000000i128)));
 }
