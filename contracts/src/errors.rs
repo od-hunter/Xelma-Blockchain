@@ -77,4 +77,8 @@ pub enum ContractError {
     InvalidOracleStatus = 34,
     /// Oracle stale threshold is out of valid range (must be 60–86400 seconds)
     InvalidStaleThreshold = 35,
+    /// Oracle max deviation bps is invalid (must be > 0)
+    InvalidOracleDeviationBps = 36,
+    /// Oracle final price deviates beyond configured threshold
+    OracleDeviationExceeded = 37,
 }

@@ -24,6 +24,11 @@ const DEFAULT_RUN_WINDOW_LEDGERS: u32 = 12;
 const MAX_BET_WINDOW_LEDGERS: u32 = 1_440;
 const MAX_RUN_WINDOW_LEDGERS: u32 = 2_880;
 
+// ─── Oracle deviation guardrails ─────────────────────────────────────────────
+/// Maximum allowed basis points for oracle deviation is bounded to avoid absurd configs.
+/// 100_000 bp = 1000% deviation (effectively "off", but still explicit).
+const MAX_ORACLE_DEVIATION_BPS: u32 = 100_000;
+
 #[contract]
 pub struct VirtualTokenContract;
 
@@ -216,6 +221,59 @@ impl VirtualTokenContract {
 
     pub fn get_oracle(env: Env) -> Option<Address> {
         env.storage().persistent().get(&DataKey::Oracle)
+    }
+
+    /// Sets the maximum oracle price deviation allowed at settlement (admin only).
+    ///
+    /// - `None`: disables deviation guardrails
+    /// - `Some(bps)`: enables guardrails with a threshold in basis points (1 bp = 0.01%)
+    pub fn set_oracle_max_deviation_bps(
+        env: Env,
+        bps: Option<u32>,
+    ) -> Result<(), ContractError> {
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .ok_or(ContractError::AdminNotSet)?;
+        admin.require_auth();
+        Self::_ensure_not_paused(&env)?;
+
+        if let Some(v) = bps {
+            if v == 0 || v > MAX_ORACLE_DEVIATION_BPS {
+                return Err(ContractError::InvalidOracleDeviationBps);
+            }
+            env.storage()
+                .persistent()
+                .set(&DataKey::OracleMaxDeviationBps, &v);
+        } else {
+            env.storage()
+                .persistent()
+                .remove(&DataKey::OracleMaxDeviationBps);
+        }
+        Ok(())
+    }
+
+    /// Returns the configured oracle max deviation bps, if set.
+    pub fn get_oracle_max_deviation_bps(env: Env) -> Option<u32> {
+        env.storage().persistent().get(&DataKey::OracleMaxDeviationBps)
+    }
+
+    /// Arms a one-shot override to bypass deviation checks for the next settlement (admin only).
+    /// The flag is automatically cleared after a settlement uses it.
+    pub fn arm_oracle_deviation_override(env: Env) -> Result<(), ContractError> {
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .ok_or(ContractError::AdminNotSet)?;
+        admin.require_auth();
+        Self::_ensure_not_paused(&env)?;
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::OracleDeviationOverrideArmed, &true);
+        Ok(())
     }
 
     // ─── Oracle heartbeat and liveness (on-chain health tracking) ───────────
@@ -926,17 +984,6 @@ impl VirtualTokenContract {
             return Err(ContractError::InvalidOracleRound);
         }
 
-        // Per-round nonce replay guard (Issue #118).
-        // Round-ID checks already block cross-round replays; this additionally
-        // makes resolution idempotent against accidental duplicate submissions
-        // of the same payload within a round. The consumed nonce is recorded
-        // before any settlement so a reused nonce is rejected up front.
-        let nonce_key = DataKey::ConsumedOracleNonce(round.round_id, payload.nonce);
-        if env.storage().persistent().has(&nonce_key) {
-            return Err(ContractError::OracleNonceReused);
-        }
-        env.storage().persistent().set(&nonce_key, &true);
-
         // Verify data freshness (max 300 seconds / 5 minutes old)
         let current_time = env.ledger().timestamp();
 
@@ -948,6 +995,91 @@ impl VirtualTokenContract {
         if current_time > payload.timestamp + 300 {
             return Err(ContractError::StaleOracleData);
         }
+
+        // ─── Oracle deviation guardrails (circuit-breaker) ───────────────────
+        // Compare settlement price against round start price (trusted baseline).
+        // If configured, reject large jumps unless an admin-armed one-shot override is set.
+        if let Some(max_bps) = env
+            .storage()
+            .persistent()
+            .get::<_, u32>(&DataKey::OracleMaxDeviationBps)
+        {
+            let start_price = round.price_start;
+            // start_price is validated at round creation; still guard division by zero.
+            if start_price == 0 {
+                return Err(ContractError::InvalidPrice);
+            }
+
+            let diff = if payload.price >= start_price {
+                payload
+                    .price
+                    .checked_sub(start_price)
+                    .ok_or(ContractError::Overflow)?
+            } else {
+                start_price
+                    .checked_sub(payload.price)
+                    .ok_or(ContractError::Overflow)?
+            };
+
+            // Integer bps: floor(diff / start) * 10_000.
+            // Use checked math so any u128 overflow maps to explicit errors.
+            let diff_bps_u128 = diff
+                .checked_mul(10_000u128)
+                .ok_or(ContractError::Overflow)?
+                / start_price;
+            let diff_bps: u32 = diff_bps_u128
+                .try_into()
+                .map_err(|_| ContractError::Overflow)?;
+
+            let override_armed: bool = env
+                .storage()
+                .persistent()
+                .get(&DataKey::OracleDeviationOverrideArmed)
+                .unwrap_or(false);
+
+            if diff_bps > max_bps && !override_armed {
+                #[allow(deprecated)]
+                env.events().publish(
+                    (symbol_short!("oracle"), symbol_short!("rejected")),
+                    (
+                        round.round_id,
+                        start_price,
+                        payload.price,
+                        diff_bps,
+                        max_bps,
+                    ),
+                );
+                return Err(ContractError::OracleDeviationExceeded);
+            }
+
+            if diff_bps > max_bps && override_armed {
+                // One-shot override is consumed on use.
+                env.storage()
+                    .persistent()
+                    .remove(&DataKey::OracleDeviationOverrideArmed);
+
+                #[allow(deprecated)]
+                env.events().publish(
+                    (symbol_short!("oracle"), symbol_short!("override")),
+                    (
+                        round.round_id,
+                        start_price,
+                        payload.price,
+                        diff_bps,
+                        max_bps,
+                    ),
+                );
+            }
+        }
+
+        // Per-round nonce replay guard (Issue #118).
+        // Consume the nonce only after all validation passes so a rejected payload
+        // doesn't permanently burn a nonce value.
+        let nonce_key = DataKey::ConsumedOracleNonce(round.round_id, payload.nonce);
+        if env.storage().persistent().has(&nonce_key) {
+            return Err(ContractError::OracleNonceReused);
+        }
+        env.storage().persistent().set(&nonce_key, &true);
 
         // Verify round has reached end_ledger
         let current_ledger = env.ledger().sequence();
