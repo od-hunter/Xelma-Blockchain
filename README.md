@@ -175,6 +175,15 @@ Recovery workflow:
 
 Use `is_paused()` to verify the current contract state before attempting recovery actions.
 
+### Precision Participant Cap
+
+Precision rounds enforce a configurable participant cap to keep storage growth and resolution cost predictable. The default cap is **1,000 participants** per Precision round. Admins can tune it with `set_max_precision_participants(max)` within the supported range of `1` to `10,000`; use `get_max_precision_participants()` to confirm the active value.
+
+Operator guidance:
+- Lower the cap for short rounds, high-volatility windows, or constrained infrastructure.
+- Raise the cap only after benchmark evidence shows resolution remains within Soroban resource limits.
+- Treat cap changes as operational risk controls; announce material changes to indexers and frontends before opening new rounds.
+
 ### TypeScript Bindings
 - **Language**: TypeScript 5.6.2
 - **SDK**: Stellar SDK 14.1.1
@@ -533,6 +542,7 @@ async function watchForNewRounds(contractId: string) {
 - `initialize(admin, oracle)` - One-time contract setup
 - `create_round(start_price, mode)` - Start new betting round (mode: 0=Up/Down, 1=Precision)
 - `set_windows(bet_ledgers, run_ledgers)` - Configure round timing windows
+- `set_max_precision_participants(max)` - Configure the Precision round participant cap
 
 ### Oracle Functions:
 - `resolve_round(payload)` - Resolve round and trigger payouts (requires `OraclePayload` with price, timestamp, and round ID)
@@ -543,6 +553,7 @@ async function watchForNewRounds(contractId: string) {
 - `get_admin()` - Query admin address
 - `get_oracle()` - Query oracle address
 - `get_pending_winnings(user)` - Check claimable amount
+- `get_max_precision_participants()` - Check the active Precision participant cap
 - `get_precision_predictions()` - View all predictions in current Precision round
 - `get_updown_positions()` - View all positions in current Up/Down round
 

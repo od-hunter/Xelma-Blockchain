@@ -77,4 +77,8 @@ pub enum ContractError {
     InvalidOracleStatus = 34,
     /// Oracle stale threshold is out of valid range (must be 60–86400 seconds)
     InvalidStaleThreshold = 35,
+    /// Precision round has reached the configured participant cap
+    PrecisionParticipantCapExceeded = 36,
+    /// Precision participant cap is out of range (must be 1â€“10000)
+    InvalidPrecisionParticipantCap = 37,
 }

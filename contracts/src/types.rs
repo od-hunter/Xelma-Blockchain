@@ -64,6 +64,8 @@ pub enum DataKey {
     OracleHeartbeat,
     /// Stale-heartbeat threshold in seconds (admin-configurable); unset = 3600 s default
     OracleStaleThreshold,
+    /// Maximum participants accepted in a Precision round; unset = protocol default
+    MaxPrecisionParticipants,
 }
 
 /// Represents which side a user bet on

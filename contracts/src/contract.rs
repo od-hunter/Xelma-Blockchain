@@ -13,6 +13,8 @@ use crate::types::{
 const MIN_CAP_VALUE: i128 = 1;
 /// Upper bound on the minimum-participants config to prevent unbounded gas in resolution.
 const MAX_MIN_PARTICIPANTS: u32 = 10_000;
+const DEFAULT_MAX_PRECISION_PARTICIPANTS: u32 = 1_000;
+const MAX_PRECISION_PARTICIPANTS_LIMIT: u32 = 10_000;
 
 // ─── Oracle heartbeat limits ──────────────────────────────────────────────────
 const DEFAULT_ORACLE_STALE_THRESHOLD: u64 = 3_600; // 1 hour
@@ -259,14 +261,11 @@ impl VirtualTokenContract {
     /// Returns `true` if the oracle has a non-stale heartbeat with status not offline (2).
     /// Uses the configured stale threshold, defaulting to 3600 seconds.
     pub fn is_oracle_live(env: Env) -> bool {
-        let record: OracleHeartbeatRecord = match env
-            .storage()
-            .persistent()
-            .get(&DataKey::OracleHeartbeat)
-        {
-            Some(r) => r,
-            None => return false,
-        };
+        let record: OracleHeartbeatRecord =
+            match env.storage().persistent().get(&DataKey::OracleHeartbeat) {
+                Some(r) => r,
+                None => return false,
+            };
         if record.status == 2 {
             return false;
         }
@@ -473,7 +472,9 @@ impl VirtualTokenContract {
             if v == 0 || v > MAX_MIN_PARTICIPANTS {
                 return Err(ContractError::InvalidMinParticipants);
             }
-            env.storage().persistent().set(&DataKey::MinParticipants, &v);
+            env.storage()
+                .persistent()
+                .set(&DataKey::MinParticipants, &v);
         } else {
             env.storage().persistent().remove(&DataKey::MinParticipants);
         }
@@ -483,6 +484,36 @@ impl VirtualTokenContract {
     /// Returns the current minimum participant threshold, if set.
     pub fn get_min_participants(env: Env) -> Option<u32> {
         env.storage().persistent().get(&DataKey::MinParticipants)
+    }
+
+    /// Sets the maximum participant count for Precision rounds (admin only).
+    /// The value must be in the range 1..=10_000. Unset contracts use the
+    /// protocol default of 1_000 participants.
+    pub fn set_max_precision_participants(env: Env, max: u32) -> Result<(), ContractError> {
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .ok_or(ContractError::AdminNotSet)?;
+        admin.require_auth();
+        Self::_ensure_not_paused(&env)?;
+
+        if max == 0 || max > MAX_PRECISION_PARTICIPANTS_LIMIT {
+            return Err(ContractError::InvalidPrecisionParticipantCap);
+        }
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::MaxPrecisionParticipants, &max);
+        Ok(())
+    }
+
+    /// Returns the configured Precision participant cap, or the default if unset.
+    pub fn get_max_precision_participants(env: Env) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::MaxPrecisionParticipants)
+            .unwrap_or(DEFAULT_MAX_PRECISION_PARTICIPANTS)
     }
 
     /// Returns user statistics (wins, losses, streaks)
@@ -695,15 +726,26 @@ impl VirtualTokenContract {
             return Err(ContractError::RoundEnded);
         }
 
-        let user_balance = Self::balance(env.clone(), user.clone());
-        if user_balance < amount {
-            return Err(ContractError::InsufficientBalance);
-        }
-
         // O(1) duplicate-prediction check — single composite key read
         let pred_key = DataKey::PrecisionPosition(round.round_id, user.clone());
         if env.storage().persistent().has(&pred_key) {
             return Err(ContractError::AlreadyBet);
+        }
+
+        let participants_key = DataKey::RoundParticipants(round.round_id);
+        let mut participants: Vec<Address> = env
+            .storage()
+            .persistent()
+            .get(&participants_key)
+            .unwrap_or(Vec::new(&env));
+        let max_precision_participants = Self::get_max_precision_participants(env.clone());
+        if participants.len() >= max_precision_participants {
+            return Err(ContractError::PrecisionParticipantCapExceeded);
+        }
+
+        let user_balance = Self::balance(env.clone(), user.clone());
+        if user_balance < amount {
+            return Err(ContractError::InsufficientBalance);
         }
 
         // Deduct balance
@@ -721,12 +763,6 @@ impl VirtualTokenContract {
         env.storage().persistent().set(&pred_key, &prediction);
 
         // Append to shared participant list
-        let participants_key = DataKey::RoundParticipants(round.round_id);
-        let mut participants: Vec<Address> = env
-            .storage()
-            .persistent()
-            .get(&participants_key)
-            .unwrap_or(Vec::new(&env));
         participants.push_back(user.clone());
         env.storage()
             .persistent()
@@ -1604,7 +1640,9 @@ impl VirtualTokenContract {
         env.storage().persistent().remove(&DataKey::ActiveRound);
         env.storage().persistent().remove(&DataKey::Positions);
         env.storage().persistent().remove(&DataKey::UpDownPositions);
-        env.storage().persistent().remove(&DataKey::PrecisionPositions);
+        env.storage()
+            .persistent()
+            .remove(&DataKey::PrecisionPositions);
         Ok(())
     }
 
