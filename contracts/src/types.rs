@@ -58,6 +58,8 @@ pub enum DataKey {
     /// Per-round consumed oracle nonce: (round_id, nonce) → true.
     /// Used to reject duplicate oracle payload submissions for the same round.
     ConsumedOracleNonce(u64, u64),
+    /// Minimum participant count for competitive settlement; unset = no minimum enforced
+    MinParticipants,
 }
 
 /// Represents which side a user bet on
