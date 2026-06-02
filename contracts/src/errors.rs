@@ -71,4 +71,14 @@ pub enum ContractError {
     StartPriceTooLow = 31,
     /// Start price exceeds the maximum allowed value
     StartPriceTooHigh = 32,
+    /// Oracle payload nonce was already consumed for this round (replay)
+    OracleNonceReused = 31,
+    /// Round has fewer participants than the configured minimum for competitive settlement
+    InsufficientParticipants = 32,
+    /// Minimum participants value is out of valid range (must be 1–10000)
+    InvalidMinParticipants = 33,
+    /// Oracle heartbeat status is out of range (must be 0, 1, or 2)
+    InvalidOracleStatus = 34,
+    /// Oracle stale threshold is out of valid range (must be 60–86400 seconds)
+    InvalidStaleThreshold = 35,
 }

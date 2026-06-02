@@ -219,6 +219,8 @@ Xelma-Blockchain/
 │       └── release/
 │           └── xelma_contract.wasm  # Compiled contract
 │
+├── docs/
+│   └── EVENT_SCHEMA.md        # Canonical on-chain event schema for indexers
 ├── SECURITY_REVIEW.md         # Comprehensive security audit
 ├── Cargo.toml                 # Workspace configuration
 └── README.md                  # This file
@@ -322,6 +324,8 @@ We take security seriously. The contract has undergone comprehensive hardening:
 
 All major state transitions emit standardized events for indexers and frontend consumers. Events follow a consistent format: `(topic_1, topic_2)` → `(payload...)`.
 
+> **Indexer reference**: See [docs/EVENT_SCHEMA.md](./docs/EVENT_SCHEMA.md) for the full canonical schema, field semantics, units, versioning strategy, and example decode mappings.
+
 ### Event Types:
 
 #### 1. Round Created
@@ -423,6 +427,42 @@ Payload: (
 ```
 
 **Use Case**: Track new users, display welcome messages, analytics.
+
+#### 8. Round Cancelled
+Emitted when admin cancels an active round; all stakes are refunded.
+
+```rust
+Topic: ("round", "cancelled")
+Payload: (
+  round_id: u64,   // Cancelled round
+  reason: u32,     // Admin-supplied reason code
+  pool_up: i128,   // Up-side pool at cancellation (stroops)
+  pool_down: i128  // Down-side pool at cancellation (stroops)
+)
+```
+
+#### 9. Round Fallback (insufficient participants)
+Emitted when a round ends below the minimum-participants threshold; all stakes are refunded.
+
+```rust
+Topic: ("round", "fallback")
+Payload: (
+  round_id: u64,          // Round that triggered the fallback
+  participant_count: u32, // Actual participant count
+  min_required: u32       // Configured minimum that was not met
+)
+```
+
+#### 10. Oracle Heartbeat
+Emitted when the oracle records an on-chain liveness heartbeat.
+
+```rust
+Topic: ("oracle", "heartbeat")
+Payload: (
+  timestamp: u64,  // Unix epoch seconds of the heartbeat
+  status: u32      // 0 = active, 1 = degraded, 2 = offline
+)
+```
 
 ### Event Consumption
 

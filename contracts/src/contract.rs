@@ -4,12 +4,20 @@ use soroban_sdk::{contract, contractimpl, panic_with_error, symbol_short, Addres
 
 use crate::errors::ContractError;
 use crate::types::{
-    BetSide, DataKey, OraclePayload, PrecisionPrediction, Round, RoundMode, UserPosition, UserStats,
+    BetSide, DataKey, OracleHeartbeatRecord, OraclePayload, PrecisionPrediction, Round, RoundMode,
+    UserPosition, UserStats,
 };
 
 // ─── Economic control limits ─────────────────────────────────────────────────
 /// Minimum allowed value when setting an economic cap to prevent zero-value lockouts.
 const MIN_CAP_VALUE: i128 = 1;
+/// Upper bound on the minimum-participants config to prevent unbounded gas in resolution.
+const MAX_MIN_PARTICIPANTS: u32 = 10_000;
+
+// ─── Oracle heartbeat limits ──────────────────────────────────────────────────
+const DEFAULT_ORACLE_STALE_THRESHOLD: u64 = 3_600; // 1 hour
+const MIN_ORACLE_STALE_THRESHOLD: u64 = 60; // 1 minute
+const MAX_ORACLE_STALE_THRESHOLD: u64 = 86_400; // 24 hours
 
 const DEFAULT_BET_WINDOW_LEDGERS: u32 = 6;
 const DEFAULT_RUN_WINDOW_LEDGERS: u32 = 12;
@@ -219,6 +227,95 @@ impl VirtualTokenContract {
         env.storage().persistent().get(&DataKey::Oracle)
     }
 
+    // ─── Oracle heartbeat and liveness (on-chain health tracking) ───────────
+
+    /// Records an oracle heartbeat (oracle only).
+    /// `status`: 0 = active, 1 = degraded, 2 = offline.
+    /// Stores current ledger timestamp; emits `("oracle", "heartbeat")`.
+    pub fn update_oracle_heartbeat(env: Env, status: u32) -> Result<(), ContractError> {
+        if status > 2 {
+            return Err(ContractError::InvalidOracleStatus);
+        }
+        let oracle: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Oracle)
+            .ok_or(ContractError::OracleNotSet)?;
+        oracle.require_auth();
+
+        let ts = env.ledger().timestamp();
+        let record = OracleHeartbeatRecord {
+            timestamp: ts,
+            status,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::OracleHeartbeat, &record);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (symbol_short!("oracle"), symbol_short!("heartbeat")),
+            (ts, status),
+        );
+        Ok(())
+    }
+
+    /// Returns the most recent oracle heartbeat record, if any.
+    pub fn get_oracle_heartbeat(env: Env) -> Option<OracleHeartbeatRecord> {
+        env.storage().persistent().get(&DataKey::OracleHeartbeat)
+    }
+
+    /// Returns `true` if the oracle has a non-stale heartbeat with status not offline (2).
+    /// Uses the configured stale threshold, defaulting to 3600 seconds.
+    pub fn is_oracle_live(env: Env) -> bool {
+        let record: OracleHeartbeatRecord = match env
+            .storage()
+            .persistent()
+            .get(&DataKey::OracleHeartbeat)
+        {
+            Some(r) => r,
+            None => return false,
+        };
+        if record.status == 2 {
+            return false;
+        }
+        let threshold: u64 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::OracleStaleThreshold)
+            .unwrap_or(DEFAULT_ORACLE_STALE_THRESHOLD);
+        let current_time = env.ledger().timestamp();
+        current_time <= record.timestamp.saturating_add(threshold)
+    }
+
+    /// Sets the stale heartbeat threshold in seconds (admin only).
+    /// Allowed range: 60–86400 seconds (1 minute to 24 hours).
+    pub fn set_oracle_stale_threshold(env: Env, seconds: u64) -> Result<(), ContractError> {
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .ok_or(ContractError::AdminNotSet)?;
+        admin.require_auth();
+        Self::_ensure_not_paused(&env)?;
+
+        if seconds < MIN_ORACLE_STALE_THRESHOLD || seconds > MAX_ORACLE_STALE_THRESHOLD {
+            return Err(ContractError::InvalidStaleThreshold);
+        }
+        env.storage()
+            .persistent()
+            .set(&DataKey::OracleStaleThreshold, &seconds);
+        Ok(())
+    }
+
+    /// Returns the configured oracle stale threshold, or the default (3600 s) if not set.
+    pub fn get_oracle_stale_threshold(env: Env) -> u64 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::OracleStaleThreshold)
+            .unwrap_or(DEFAULT_ORACLE_STALE_THRESHOLD)
+    }
+
     /// Sets the betting and execution windows (admin only)
     /// bet_ledgers: Number of ledgers users can place bets
     /// run_ledgers: Total number of ledgers before round can be resolved
@@ -365,6 +462,36 @@ impl VirtualTokenContract {
     /// Returns the current maximum pending winnings cap, if set.
     pub fn get_max_pending_winnings(env: Env) -> Option<i128> {
         env.storage().persistent().get(&DataKey::MaxPendingWinnings)
+    }
+
+    // ─── Minimum participants (competitive settlement integrity) ─────────────
+
+    /// Sets the minimum participant count required for competitive settlement (admin only).
+    /// Rounds that end below this threshold are refunded to all participants.
+    /// Pass `None` to disable the threshold.
+    pub fn set_min_participants(env: Env, min: Option<u32>) -> Result<(), ContractError> {
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .ok_or(ContractError::AdminNotSet)?;
+        admin.require_auth();
+        Self::_ensure_not_paused(&env)?;
+
+        if let Some(v) = min {
+            if v == 0 || v > MAX_MIN_PARTICIPANTS {
+                return Err(ContractError::InvalidMinParticipants);
+            }
+            env.storage().persistent().set(&DataKey::MinParticipants, &v);
+        } else {
+            env.storage().persistent().remove(&DataKey::MinParticipants);
+        }
+        Ok(())
+    }
+
+    /// Returns the current minimum participant threshold, if set.
+    pub fn get_min_participants(env: Env) -> Option<u32> {
+        env.storage().persistent().get(&DataKey::MinParticipants)
     }
 
     /// Returns user statistics (wins, losses, streaks)
@@ -808,6 +935,17 @@ impl VirtualTokenContract {
             return Err(ContractError::InvalidOracleRound);
         }
 
+        // Per-round nonce replay guard (Issue #118).
+        // Round-ID checks already block cross-round replays; this additionally
+        // makes resolution idempotent against accidental duplicate submissions
+        // of the same payload within a round. The consumed nonce is recorded
+        // before any settlement so a reused nonce is rejected up front.
+        let nonce_key = DataKey::ConsumedOracleNonce(round.round_id, payload.nonce);
+        if env.storage().persistent().has(&nonce_key) {
+            return Err(ContractError::OracleNonceReused);
+        }
+        env.storage().persistent().set(&nonce_key, &true);
+
         // Verify data freshness (max 300 seconds / 5 minutes old)
         let current_time = env.ledger().timestamp();
 
@@ -828,6 +966,29 @@ impl VirtualTokenContract {
 
         // Store round ID before cleaning up
         let round_id = round.round_id;
+
+        // ─── Minimum participants threshold check ────────────────────────────
+        if let Some(min) = env
+            .storage()
+            .persistent()
+            .get::<_, u32>(&DataKey::MinParticipants)
+        {
+            let threshold_participants: Vec<Address> = env
+                .storage()
+                .persistent()
+                .get(&DataKey::RoundParticipants(round_id))
+                .unwrap_or(Vec::new(&env));
+            let count = threshold_participants.len() as u32;
+            if count < min {
+                Self::_refund_under_threshold(&env, &round, &threshold_participants)?;
+                #[allow(deprecated)]
+                env.events().publish(
+                    (symbol_short!("round"), symbol_short!("fallback")),
+                    (round_id, count, min),
+                );
+                return Ok(());
+            }
+        }
 
         // Branch based on round mode
         match round.mode {
@@ -1412,6 +1573,62 @@ impl VirtualTokenContract {
             }
         }
 
+        Ok(())
+    }
+
+    /// Refunds all participant stakes when the minimum-participants threshold is not met.
+    /// Performs the same key cleanup as normal resolution so the contract is left consistent.
+    fn _refund_under_threshold(
+        env: &Env,
+        round: &Round,
+        participants: &Vec<Address>,
+    ) -> Result<(), ContractError> {
+        let round_id = round.round_id;
+        match round.mode {
+            RoundMode::UpDown => {
+                for i in 0..participants.len() {
+                    if let Some(user) = participants.get(i) {
+                        let pos_key = DataKey::Position(round_id, user.clone());
+                        if let Some(pos) =
+                            env.storage().persistent().get::<_, UserPosition>(&pos_key)
+                        {
+                            Self::_accumulate_pending(env, user, pos.amount)?;
+                        }
+                    }
+                }
+            }
+            RoundMode::Precision => {
+                for i in 0..participants.len() {
+                    if let Some(user) = participants.get(i) {
+                        let pred_key = DataKey::PrecisionPosition(round_id, user.clone());
+                        if let Some(pred) = env
+                            .storage()
+                            .persistent()
+                            .get::<_, PrecisionPrediction>(&pred_key)
+                        {
+                            Self::_accumulate_pending(env, user, pred.amount)?;
+                        }
+                    }
+                }
+            }
+        }
+        for i in 0..participants.len() {
+            if let Some(user) = participants.get(i) {
+                env.storage()
+                    .persistent()
+                    .remove(&DataKey::Position(round_id, user.clone()));
+                env.storage()
+                    .persistent()
+                    .remove(&DataKey::PrecisionPosition(round_id, user));
+            }
+        }
+        env.storage()
+            .persistent()
+            .remove(&DataKey::RoundParticipants(round_id));
+        env.storage().persistent().remove(&DataKey::ActiveRound);
+        env.storage().persistent().remove(&DataKey::Positions);
+        env.storage().persistent().remove(&DataKey::UpDownPositions);
+        env.storage().persistent().remove(&DataKey::PrecisionPositions);
         Ok(())
     }
 

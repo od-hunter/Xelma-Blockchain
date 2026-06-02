@@ -43,6 +43,9 @@ jobs:
       - name: Run cargo test
         run: cargo test --workspace --verbose --locked
 
+      - name: Benchmark report (cost/gas regression guardrails)
+        run: cargo test --package xelma-contract cost_benchmarks --locked -- --nocapture
+
       - name: Run cargo clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
@@ -218,10 +221,55 @@ jobs:
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
 
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-audit-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-audit-
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run dependency vulnerability audit
+        # Fails on any vulnerability with CVSS score >= 7.0 (high/critical).
+        # Use --deny warnings to also surface advisory-level findings in CI output.
+        run: cargo audit --deny warnings
+
+      - name: Run security-oriented clippy lints
+        # These lints catch common unsafe patterns beyond the default clippy set.
+        run: |
+          cargo clippy --workspace --all-targets --locked -- \
+            -D clippy::unwrap_used \
+            -D clippy::expect_used \
+            -D clippy::panic \
+            -D clippy::integer_arithmetic \
+            -W clippy::arithmetic_side_effects \
+            -W clippy::cast_possible_truncation \
+            -W clippy::cast_sign_loss \
+            2>&1 | tee /tmp/clippy-security.txt
+          # Surface the results; non-zero exit propagates naturally
+          cat /tmp/clippy-security.txt
+
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [rust-test, contract-build, bindings-test, bindings-build, parity-check, format-check]
+    needs: [rust-test, contract-build, bindings-test, bindings-build, parity-check, format-check, security-audit]
     if: always()
     steps:
       - name: Check all jobs status
@@ -231,7 +279,8 @@ jobs:
              [ "${{ needs.bindings-test.result }}" != "success" ] || \
              [ "${{ needs.bindings-build.result }}" != "success" ] || \
              [ "${{ needs.parity-check.result }}" != "success" ] || \
-             [ "${{ needs.format-check.result }}" != "success" ]; then
+             [ "${{ needs.format-check.result }}" != "success" ] || \
+             [ "${{ needs.security-audit.result }}" != "success" ]; then
             echo "One or more CI jobs failed"
             echo "Rust Tests: ${{ needs.rust-test.result }}"
             echo "Contract Build: ${{ needs.contract-build.result }}"
@@ -239,6 +288,7 @@ jobs:
             echo "Bindings Build: ${{ needs.bindings-build.result }}"
             echo "Parity Check: ${{ needs.parity-check.result }}"
             echo "Format Check: ${{ needs.format-check.result }}"
+            echo "Security Audit: ${{ needs.security-audit.result }}"
             exit 1
           fi
           echo "All CI checks passed"
