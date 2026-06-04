@@ -291,10 +291,7 @@ impl VirtualTokenContract {
     ///
     /// - `None`: disables deviation guardrails
     /// - `Some(bps)`: enables guardrails with a threshold in basis points (1 bp = 0.01%)
-    pub fn set_oracle_max_deviation_bps(
-        env: Env,
-        bps: Option<u32>,
-    ) -> Result<(), ContractError> {
+    pub fn set_oracle_max_deviation_bps(env: Env, bps: Option<u32>) -> Result<(), ContractError> {
         let admin: Address = env
             .storage()
             .persistent()
@@ -320,7 +317,9 @@ impl VirtualTokenContract {
 
     /// Returns the configured oracle max deviation bps, if set.
     pub fn get_oracle_max_deviation_bps(env: Env) -> Option<u32> {
-        env.storage().persistent().get(&DataKey::OracleMaxDeviationBps)
+        env.storage()
+            .persistent()
+            .get(&DataKey::OracleMaxDeviationBps)
     }
 
     /// Arms a one-shot override to bypass deviation checks for the next settlement (admin only).
@@ -382,14 +381,11 @@ impl VirtualTokenContract {
     /// Returns `true` if the oracle has a non-stale heartbeat with status not offline (2).
     /// Uses the configured stale threshold, defaulting to 3600 seconds.
     pub fn is_oracle_live(env: Env) -> bool {
-        let record: OracleHeartbeatRecord = match env
-            .storage()
-            .persistent()
-            .get(&DataKey::OracleHeartbeat)
-        {
-            Some(r) => r,
-            None => return false,
-        };
+        let record: OracleHeartbeatRecord =
+            match env.storage().persistent().get(&DataKey::OracleHeartbeat) {
+                Some(r) => r,
+                None => return false,
+            };
         if record.status == 2 {
             return false;
         }
@@ -602,7 +598,9 @@ impl VirtualTokenContract {
             if v == 0 || v > MAX_MIN_PARTICIPANTS {
                 return Err(ContractError::InvalidMinParticipants);
             }
-            env.storage().persistent().set(&DataKey::MinParticipants, &v);
+            env.storage()
+                .persistent()
+                .set(&DataKey::MinParticipants, &v);
         } else {
             env.storage().persistent().remove(&DataKey::MinParticipants);
         }
@@ -2041,7 +2039,9 @@ impl VirtualTokenContract {
         env.storage().persistent().remove(&DataKey::ActiveRound);
         env.storage().persistent().remove(&DataKey::Positions);
         env.storage().persistent().remove(&DataKey::UpDownPositions);
-        env.storage().persistent().remove(&DataKey::PrecisionPositions);
+        env.storage()
+            .persistent()
+            .remove(&DataKey::PrecisionPositions);
         Ok(())
     }
 

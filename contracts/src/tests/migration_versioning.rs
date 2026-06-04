@@ -74,4 +74,3 @@ fn test_migration_blocked_when_round_active() {
     let res = client.try_migrate_schema_v1_to_v2();
     assert_eq!(res, Err(Ok(ContractError::MigrationActiveRound)));
 }
-
