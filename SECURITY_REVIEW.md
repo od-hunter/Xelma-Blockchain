@@ -70,6 +70,9 @@ Test distribution:
 
 ## Threat Model
 
+For the formal protocol invariant list, role assumptions, upgrade guarantees,
+and coverage traceability, see [`PROTOCOL_SPEC.md`](./PROTOCOL_SPEC.md).
+
 Primary assets:
 
 - User vXLM balances, pending winnings, and round funds represented in contract storage.

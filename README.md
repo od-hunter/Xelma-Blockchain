@@ -323,6 +323,7 @@ We take security seriously. The contract has undergone comprehensive hardening:
 
 ### Audited:
 - [SECURITY_REVIEW.md](./SECURITY_REVIEW.md) - Complete security analysis
+- [PROTOCOL_SPEC.md](./PROTOCOL_SPEC.md) - Formal invariants, threat model, and trust boundaries
 
 **Status**: ✅ Production-ready for testnet  
 **Recommendation**: External audit recommended before mainnet deployment
@@ -724,6 +725,7 @@ Check issues labeled [`good-first-issue`](https://github.com/TevaLabs/Xelma-Bloc
 ## 📚 Documentation
 
 - **[Smart Contract](./contracts/src/)** - Modular Rust code (contract, types, errors)
+- **[Protocol Spec](./PROTOCOL_SPEC.md)** - Formal invariants, threat model, and test traceability
 - **[Security Review](./SECURITY_REVIEW.md)** - Security analysis and best practices
 - **[Bindings Guide](./bindings/README.md)** - TypeScript integration guide
 - **[Test Suite](./contracts/src/tests/)** - Comprehensive test examples
