@@ -103,4 +103,8 @@ pub enum ContractError {
     InvalidRevealWindow = 47,
     /// Revealed prediction hash does not match committed hash
     HashMismatch = 48,
+    /// Oracle payload network_id does not match the runtime network
+    OracleNetworkMismatch = 49,
+    /// Oracle payload contract_addr does not match the current contract
+    OracleContractMismatch = 50,
 }

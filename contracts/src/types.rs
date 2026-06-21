@@ -139,6 +139,12 @@ pub struct OraclePayload {
     /// `DataKey::ConsumedOracleNonce(round_id, nonce)` and rejects any reuse,
     /// making resolution idempotent against accidental duplicate submissions.
     pub nonce: u64,
+    /// SHA-256 hash of the network passphrase this payload targets.
+    /// Validated against `env.ledger().network_id()` to prevent cross-network replay.
+    pub network_id: BytesN<32>,
+    /// Contract address this payload is intended for.
+    /// Validated against `env.current_contract_address()` to prevent cross-contract replay.
+    pub contract_addr: Address,
 }
 
 /// Oracle liveness record, updated by the oracle service on each heartbeat call.

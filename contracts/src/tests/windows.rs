@@ -326,6 +326,8 @@ fn test_resolution_only_allowed_after_run_ledgers() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
     assert_eq!(result, Err(Ok(ContractError::RoundNotEnded)));
 
@@ -340,6 +342,8 @@ fn test_resolution_only_allowed_after_run_ledgers() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Round should be cleared

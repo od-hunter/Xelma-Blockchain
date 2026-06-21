@@ -6,7 +6,7 @@ use crate::types::{DataKey, OraclePayload};
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Events, Ledger as _},
-    Address, Env, IntoVal, TryIntoVal,
+    Address, BytesN, Env, IntoVal, TryIntoVal,
 };
 
 #[test]
@@ -34,6 +34,8 @@ fn test_resolve_round_stale_timestamp() {
         timestamp: 600,
         round_id: 0, // Starts at ledger 0
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     };
 
     let result = client.try_resolve_round(&payload);
@@ -63,6 +65,8 @@ fn test_resolve_round_invalid_round_id() {
         timestamp: env.ledger().timestamp(),
         round_id: 999,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     };
 
     let result = client.try_resolve_round(&payload);
@@ -93,6 +97,8 @@ fn test_resolve_round_valid_payload() {
         timestamp: 900, // 100s old, OK
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     };
 
     client.resolve_round(&payload);
@@ -124,6 +130,8 @@ fn test_resolve_round_future_timestamp() {
         timestamp: 1001,
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     };
 
     let result = client.try_resolve_round(&payload);
@@ -157,6 +165,8 @@ fn test_cancelled_round_cannot_be_resolved() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
     assert_eq!(result, Err(Ok(ContractError::NoActiveRound)));
 }
@@ -234,6 +244,8 @@ fn test_resolve_round_duplicate_nonce_rejected() {
         timestamp: 900,
         round_id: round.start_ledger,
         nonce: 42u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
     assert_eq!(result, Err(Ok(ContractError::OracleNonceReused)));
 }
@@ -263,6 +275,8 @@ fn test_resolve_round_unique_nonce_resolves() {
         timestamp: 900,
         round_id: round.start_ledger,
         nonce: 7u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Round resolved and the nonce is recorded as consumed for that round.
@@ -543,6 +557,8 @@ fn test_oracle_deviation_rejected_when_over_threshold() {
         timestamp: 900,
         round_id: round.start_ledger,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
     assert_eq!(result, Err(Ok(ContractError::OracleDeviationExceeded)));
 }
@@ -575,6 +591,8 @@ fn test_oracle_deviation_allows_at_exact_threshold() {
         timestamp: 900,
         round_id: round.start_ledger,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
     assert_eq!(client.get_active_round(), None);
 }
@@ -607,6 +625,8 @@ fn test_oracle_deviation_rounding_floor_is_deterministic() {
         timestamp: 900,
         round_id: round.start_ledger,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
     assert_eq!(client.get_active_round(), None);
 }
@@ -638,10 +658,11 @@ fn test_oracle_deviation_override_allows_over_threshold_and_emits_event() {
         timestamp: 900,
         round_id: round.start_ledger,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
-    // Capture events before `as_contract` — that helper clears the event buffer.
-    // Verify override event emitted
+    // Verify override event emitted (check before env.as_contract which resets event scope)
     let events = env.events().all();
     let override_event = events.iter().find(|e| {
         let (_contract, topics, _data) = e;
@@ -730,6 +751,8 @@ fn test_resolve_round_nonce_boundary_values() {
         timestamp: 900,
         round_id: round.start_ledger,
         nonce: 0u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
     assert_eq!(zero, Err(Ok(ContractError::OracleNonceReused)));
 
@@ -738,6 +761,139 @@ fn test_resolve_round_nonce_boundary_values() {
         timestamp: 900,
         round_id: round.start_ledger,
         nonce: u64::MAX,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
     assert_eq!(max, Err(Ok(ContractError::OracleNonceReused)));
+}
+
+// ─── Oracle domain-context validation tests (Issue #143) ────────────────────
+
+#[test]
+fn test_resolve_round_wrong_network_id_rejected() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.create_round(&1_0000000, &None);
+    let round = client.get_active_round().unwrap();
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+        li.timestamp = 1000;
+    });
+
+    let wrong_network = BytesN::from_array(&env, &[0xFFu8; 32]);
+
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 1_5000000,
+        timestamp: 900,
+        round_id: round.start_ledger,
+        nonce: 1u64,
+        network_id: wrong_network,
+        contract_addr: contract_id.clone(),
+    });
+    assert_eq!(result, Err(Ok(ContractError::OracleNetworkMismatch)));
+}
+
+#[test]
+fn test_resolve_round_wrong_contract_addr_rejected() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.create_round(&1_0000000, &None);
+    let round = client.get_active_round().unwrap();
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+        li.timestamp = 1000;
+    });
+
+    let wrong_contract = Address::generate(&env);
+
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 1_5000000,
+        timestamp: 900,
+        round_id: round.start_ledger,
+        nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: wrong_contract,
+    });
+    assert_eq!(result, Err(Ok(ContractError::OracleContractMismatch)));
+}
+
+#[test]
+fn test_resolve_round_valid_domain_context_resolves() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.create_round(&1_0000000, &None);
+    let round = client.get_active_round().unwrap();
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+        li.timestamp = 1000;
+    });
+
+    // Correct network + correct contract => resolves normally
+    client.resolve_round(&OraclePayload {
+        price: 1_5000000,
+        timestamp: 900,
+        round_id: round.start_ledger,
+        nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
+    });
+    assert_eq!(client.get_active_round(), None);
+}
+
+#[test]
+fn test_resolve_round_both_network_and_contract_wrong() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.create_round(&1_0000000, &None);
+    let round = client.get_active_round().unwrap();
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+        li.timestamp = 1000;
+    });
+
+    let wrong_network = BytesN::from_array(&env, &[0xFFu8; 32]);
+    let wrong_contract = Address::generate(&env);
+
+    // Network is checked first, so we get OracleNetworkMismatch
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 1_5000000,
+        timestamp: 900,
+        round_id: round.start_ledger,
+        nonce: 1u64,
+        network_id: wrong_network,
+        contract_addr: wrong_contract,
+    });
+    assert_eq!(result, Err(Ok(ContractError::OracleNetworkMismatch)));
 }

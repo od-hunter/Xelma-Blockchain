@@ -84,6 +84,8 @@ fn test_resolve_round_price_unchanged() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Check pending winnings (not claimed yet)
@@ -186,6 +188,8 @@ fn test_resolve_round_price_went_up() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Check pending winnings
@@ -280,6 +284,8 @@ fn test_resolve_round_price_went_down() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Check pending winnings
@@ -377,6 +383,8 @@ fn test_resolve_round_without_active_round() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
     assert_eq!(result, Err(Ok(ContractError::NoActiveRound)));
 }
@@ -458,6 +466,8 @@ fn test_resolve_precision_closest_guess_wins() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Alice should win the entire pot (100 + 150 + 50 = 300)
@@ -551,6 +561,8 @@ fn test_resolve_precision_tie_splits_pot() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Total pot is 300, split evenly between Alice and Bob (150 each)
@@ -627,6 +639,8 @@ fn test_resolve_precision_exact_match() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     assert_eq!(client.get_pending_winnings(&alice), 200_0000000); // Wins entire pot
@@ -658,6 +672,8 @@ fn test_resolve_precision_no_predictions() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Round should be cleared
@@ -732,6 +748,8 @@ fn test_resolve_precision_three_way_tie() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Total pot is 400, split 3 ways = 133.33... each
@@ -790,6 +808,8 @@ fn test_resolve_precision_single_prediction() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     assert_eq!(client.get_pending_winnings(&alice), 100_0000000);
@@ -852,6 +872,8 @@ fn test_resolve_precision_large_differences() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     assert_eq!(client.get_pending_winnings(&alice), 200_0000000);
@@ -927,6 +949,8 @@ fn test_precision_remainder_3way_tie_uneven_pot() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Total pot: 100_0000000, Winner count: 3
@@ -1038,6 +1062,8 @@ fn test_precision_remainder_5way_tie() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Total pot: 103_0000000, Winner count: 5
@@ -1115,6 +1141,8 @@ fn test_precision_no_remainder() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Total pot: 100, Winner count: 2
@@ -1154,6 +1182,8 @@ fn test_round_resolved_event_emitted() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Verify resolved event was emitted
@@ -1222,6 +1252,8 @@ fn test_claim_winnings_event_emitted() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Claim winnings
@@ -1349,6 +1381,8 @@ fn test_precision_payout_deterministic_same_inputs() {
             timestamp: env.ledger().timestamp(),
             round_id: 0,
             nonce: 1u64,
+            network_id: env.ledger().network_id(),
+            contract_addr: contract_id.clone(),
         });
 
         (
@@ -1428,6 +1462,8 @@ fn test_precision_payout_conservation_two_way_tie_remainder() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     let alice_payout = client.get_pending_winnings(&alice);
@@ -1479,6 +1515,8 @@ fn test_min_participants_blocks_settlement_updown() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Stake refunded to pending winnings, not claimed yet
@@ -1518,6 +1556,8 @@ fn test_min_participants_allows_settlement_at_threshold() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     assert_eq!(client.get_pending_winnings(&user1), 200_0000000);
@@ -1552,6 +1592,8 @@ fn test_min_participants_fallback_refunds_precision_mode() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Precision bet refunded
@@ -1585,6 +1627,8 @@ fn test_min_participants_fallback_event_emitted() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     let events = env.events().all();
@@ -1656,6 +1700,8 @@ fn test_no_min_participants_threshold_resolves_normally() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Price went up but winning_pool (Up) = 100, losing_pool (Down) = 0 → payout = 100 + 0 = 100
@@ -1729,6 +1775,8 @@ fn test_precision_payout_conservation_large_tie_set() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     let users = [u0, u1, u2, u3, u4, u5, u6, u7, u8, u9];
@@ -1805,6 +1853,8 @@ fn test_precision_commit_reveal_resolution_payout_with_unrevealed_participants()
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Total pot is 250 (Alice 100 + Bob 150)
@@ -1888,6 +1938,8 @@ fn test_precision_remainder_goes_to_lexicographically_lowest_winner() {
         timestamp: env.ledger().timestamp(),
         round_id: 0,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     // Total pot = 200_0000001
@@ -1915,6 +1967,8 @@ fn resolve_active_round(
         timestamp: env.ledger().timestamp(),
         round_id: round.start_ledger,
         nonce,
+        network_id: env.ledger().network_id(),
+        contract_addr: client.address.clone(),
     });
     round_id
 }

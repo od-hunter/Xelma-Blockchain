@@ -450,6 +450,8 @@ fn test_predict_price_valid_scales() {
                 timestamp: env.ledger().timestamp(),
                 round_id: round.start_ledger,
                 nonce: 1u64,
+                network_id: env.ledger().network_id(),
+                contract_addr: contract_id.clone(),
             });
         }
 
@@ -620,6 +622,8 @@ fn test_all_events_for_updown_round() {
         timestamp: env.ledger().timestamp(),
         round_id: round.start_ledger,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     let events = env.events().all();
@@ -738,6 +742,8 @@ fn test_all_events_for_precision_round() {
         timestamp: env.ledger().timestamp(),
         round_id: round.start_ledger,
         nonce: 1u64,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
     });
 
     let events = env.events().all();
@@ -975,7 +981,7 @@ fn test_precision_commit_reveal_happy_path() {
     env.mock_all_auths();
     client.initialize(&admin, &oracle);
     client.mint_initial(&user);
-    client.create_round(&1_0000000, &Some(1)); // Precision mode
+    client.create_round(&1_0000000, &Some(1));
 
     let price = 2297u128;
     let salt = BytesN::from_array(&env, &[9; 32]);
@@ -984,20 +990,16 @@ fn test_precision_commit_reveal_happy_path() {
     preimage.append(&salt.clone().to_xdr(&env));
     let hash = env.crypto().sha256(&preimage);
 
-    // Commit
     let committed_hash: BytesN<32> = hash.into();
     client.commit_prediction(&user, &committed_hash, &100_0000000);
     assert_eq!(client.balance(&user), 900_0000000);
 
-    // Move to reveal window (ledger closes betting at sequence >= 6)
     env.ledger().with_mut(|li| {
         li.sequence_number = 7;
     });
 
-    // Reveal
     client.reveal_prediction(&user, &price, &salt);
 
-    // Verify prediction is stored
     let prediction = client.get_user_precision_prediction(&user).unwrap();
     assert_eq!(prediction.amount, 100_0000000);
     assert_eq!(prediction.predicted_price, price);
@@ -1037,7 +1039,6 @@ fn test_precision_commit_reveal_already_revealed() {
 
     client.reveal_prediction(&user, &price, &salt.clone());
 
-    // Second reveal should fail
     let result = client.try_reveal_prediction(&user, &price, &salt);
     assert_eq!(result, Err(Ok(ContractError::AlreadyRevealed)));
 }
@@ -1074,11 +1075,9 @@ fn test_precision_commit_reveal_hash_mismatch() {
         li.sequence_number = 7;
     });
 
-    // Wrong price
     let result = client.try_reveal_prediction(&user, &2500, &salt.clone());
     assert_eq!(result, Err(Ok(ContractError::HashMismatch)));
 
-    // Wrong salt
     let wrong_salt = BytesN::from_array(&env, &[8; 32]);
     let result = client.try_reveal_prediction(&user, &price, &wrong_salt);
     assert_eq!(result, Err(Ok(ContractError::HashMismatch)));

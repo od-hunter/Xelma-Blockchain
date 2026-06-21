@@ -1397,6 +1397,15 @@ impl VirtualTokenContract {
             return Err(ContractError::InvalidOracleRound);
         }
 
+        // ─── Domain-context validation (Issue #143) ─────────────────────────
+        // Reject payloads targeting a different network or contract deployment.
+        if payload.network_id != env.ledger().network_id() {
+            return Err(ContractError::OracleNetworkMismatch);
+        }
+        if payload.contract_addr != env.current_contract_address() {
+            return Err(ContractError::OracleContractMismatch);
+        }
+
         // Verify data freshness (max 300 seconds / 5 minutes old)
         let current_time = env.ledger().timestamp();
 
