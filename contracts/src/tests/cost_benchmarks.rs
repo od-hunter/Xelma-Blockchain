@@ -68,7 +68,13 @@ fn report(label: &str, cpu: u64, mem: u64) {
     std::println!("[bench] {label:<24} cpu={cpu:>12} mem={mem:>12}");
 }
 
-fn setup() -> (Env, Address, Address, Address, VirtualTokenContractClient<'static>) {
+fn setup() -> (
+    Env,
+    Address,
+    Address,
+    Address,
+    VirtualTokenContractClient<'static>,
+) {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(VirtualTokenContract, ());

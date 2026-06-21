@@ -9,7 +9,13 @@ use soroban_sdk::{
     Address, Bytes, BytesN, Env, TryIntoVal,
 };
 
-fn setup() -> (Env, Address, Address, Address, VirtualTokenContractClient<'static>) {
+fn setup() -> (
+    Env,
+    Address,
+    Address,
+    Address,
+    VirtualTokenContractClient<'static>,
+) {
     let env = Env::default();
     env.mock_all_auths();
     let contract_id = env.register(VirtualTokenContract, ());

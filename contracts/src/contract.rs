@@ -144,10 +144,7 @@ impl VirtualTokenContract {
     pub fn is_paused(env: Env) -> bool {
         let key = DataKey::Paused;
         Self::_extend_persistent_ttl(&env, &key);
-        env.storage()
-            .persistent()
-            .get(&key)
-            .unwrap_or(false)
+        env.storage().persistent().get(&key).unwrap_or(false)
     }
 
     /// Pauses the contract for emergency recovery (admin only)
@@ -390,14 +387,10 @@ impl VirtualTokenContract {
             if v == 0 || v > MAX_ORACLE_DEVIATION_BPS {
                 return Err(ContractError::InvalidOracleDeviationBps);
             }
-            env.storage()
-                .persistent()
-                .set(&deviation_key, &v);
+            env.storage().persistent().set(&deviation_key, &v);
             Self::_extend_persistent_ttl(&env, &deviation_key);
         } else {
-            env.storage()
-                .persistent()
-                .remove(&deviation_key);
+            env.storage().persistent().remove(&deviation_key);
         }
         Ok(())
     }
@@ -406,9 +399,7 @@ impl VirtualTokenContract {
     pub fn get_oracle_max_deviation_bps(env: Env) -> Option<u32> {
         let key = DataKey::OracleMaxDeviationBps;
         Self::_extend_persistent_ttl(&env, &key);
-        env.storage()
-            .persistent()
-            .get(&key)
+        env.storage().persistent().get(&key)
     }
 
     /// Arms a one-shot override to bypass deviation checks for the next settlement (admin only).
@@ -425,9 +416,7 @@ impl VirtualTokenContract {
         Self::_ensure_not_paused(&env)?;
 
         let override_key = DataKey::OracleDeviationOverrideArmed;
-        env.storage()
-            .persistent()
-            .set(&override_key, &true);
+        env.storage().persistent().set(&override_key, &true);
         Self::_extend_persistent_ttl(&env, &override_key);
         Ok(())
     }
@@ -480,11 +469,10 @@ impl VirtualTokenContract {
     pub fn is_oracle_live(env: Env) -> bool {
         let heartbeat_key = DataKey::OracleHeartbeat;
         Self::_extend_persistent_ttl(&env, &heartbeat_key);
-        let record: OracleHeartbeatRecord =
-            match env.storage().persistent().get(&heartbeat_key) {
-                Some(r) => r,
-                None => return false,
-            };
+        let record: OracleHeartbeatRecord = match env.storage().persistent().get(&heartbeat_key) {
+            Some(r) => r,
+            None => return false,
+        };
         if record.status == 2 {
             return false;
         }
@@ -515,9 +503,7 @@ impl VirtualTokenContract {
             return Err(ContractError::InvalidStaleThreshold);
         }
         let key = DataKey::OracleStaleThreshold;
-        env.storage()
-            .persistent()
-            .set(&key, &seconds);
+        env.storage().persistent().set(&key, &seconds);
         Self::_extend_persistent_ttl(&env, &key);
         Ok(())
     }
@@ -634,14 +620,10 @@ impl VirtualTokenContract {
             if v < MIN_CAP_VALUE {
                 return Err(ContractError::InvalidBetAmount);
             }
-            env.storage()
-                .persistent()
-                .set(&key, &v);
+            env.storage().persistent().set(&key, &v);
             Self::_extend_persistent_ttl(&env, &key);
         } else {
-            env.storage()
-                .persistent()
-                .remove(&key);
+            env.storage().persistent().remove(&key);
         }
         Ok(())
     }
@@ -650,9 +632,7 @@ impl VirtualTokenContract {
     pub fn get_max_user_exposure(env: Env) -> Option<i128> {
         let key = DataKey::MaxUserRoundExposure;
         Self::_extend_persistent_ttl(&env, &key);
-        env.storage()
-            .persistent()
-            .get(&key)
+        env.storage().persistent().get(&key)
     }
 
     // ─── Accounting safety (Issue #120) ─────────────────────────────────────
@@ -677,14 +657,10 @@ impl VirtualTokenContract {
             if v < MIN_CAP_VALUE {
                 return Err(ContractError::InvalidBetAmount);
             }
-            env.storage()
-                .persistent()
-                .set(&key, &v);
+            env.storage().persistent().set(&key, &v);
             Self::_extend_persistent_ttl(&env, &key);
         } else {
-            env.storage()
-                .persistent()
-                .remove(&key);
+            env.storage().persistent().remove(&key);
         }
         Ok(())
     }
@@ -716,9 +692,7 @@ impl VirtualTokenContract {
             if v == 0 || v > MAX_MIN_PARTICIPANTS {
                 return Err(ContractError::InvalidMinParticipants);
             }
-            env.storage()
-                .persistent()
-                .set(&key, &v);
+            env.storage().persistent().set(&key, &v);
             Self::_extend_persistent_ttl(&env, &key);
         } else {
             env.storage().persistent().remove(&key);
@@ -750,9 +724,7 @@ impl VirtualTokenContract {
         }
 
         let key = DataKey::MaxPrecisionParticipants;
-        env.storage()
-            .persistent()
-            .set(&key, &max);
+        env.storage().persistent().set(&key, &max);
         Self::_extend_persistent_ttl(&env, &key);
         Ok(())
     }

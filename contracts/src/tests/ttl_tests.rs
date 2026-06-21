@@ -21,16 +21,12 @@ fn test_schema_version_and_admin_ttl_extended_on_interaction() {
     // SchemaVersion and Admin are long-lived keys.
     // Verify they are extended to BUMP_AMOUNT (518_400 ledgers)
     let schema_ttl = env.as_contract(&contract_id, || {
-        env.storage()
-            .persistent()
-            .get_ttl(&DataKey::SchemaVersion)
+        env.storage().persistent().get_ttl(&DataKey::SchemaVersion)
     });
     assert!(schema_ttl >= 518_400);
 
     let admin_ttl = env.as_contract(&contract_id, || {
-        env.storage()
-            .persistent()
-            .get_ttl(&DataKey::Admin)
+        env.storage().persistent().get_ttl(&DataKey::Admin)
     });
     assert!(admin_ttl >= 518_400);
 }
@@ -77,21 +73,17 @@ fn test_paused_and_configs_ttl_extended_on_calls() {
     client.initialize(&admin, &oracle);
 
     // Set and get max stake to trigger TTL extensions
-    client.set_max_stake(&Some(10_000_0000000));
+    client.set_max_stake(&Some(100_000_000_000));
     client.get_max_stake();
 
     let max_stake_ttl = env.as_contract(&contract_id, || {
-        env.storage()
-            .persistent()
-            .get_ttl(&DataKey::MaxStake)
+        env.storage().persistent().get_ttl(&DataKey::MaxStake)
     });
     assert!(max_stake_ttl >= 518_400);
 
     // Paused config key checked in ensure_not_paused
     let paused_ttl = env.as_contract(&contract_id, || {
-        env.storage()
-            .persistent()
-            .get_ttl(&DataKey::Paused)
+        env.storage().persistent().get_ttl(&DataKey::Paused)
     });
     assert!(paused_ttl >= 518_400);
 }
@@ -118,9 +110,7 @@ fn test_oracle_and_heartbeat_ttl_extended() {
     assert!(heartbeat_ttl >= 518_400);
 
     let oracle_ttl = env.as_contract(&contract_id, || {
-        env.storage()
-            .persistent()
-            .get_ttl(&DataKey::Oracle)
+        env.storage().persistent().get_ttl(&DataKey::Oracle)
     });
     assert!(oracle_ttl >= 518_400);
 }
