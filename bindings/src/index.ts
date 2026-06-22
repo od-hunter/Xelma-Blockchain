@@ -51,6 +51,32 @@ export interface Round {
 export type BetSide = {tag: "Up", values: void} | {tag: "Down", values: void};
 
 /**
+ * Identifies which critical risk setting is pending timelocked activation.
+ */
+export enum ConfigChangeKind {
+  Windows = 0,
+  MaxStake = 1,
+  MaxUserRoundExposure = 2,
+  MaxPendingWinnings = 3,
+  OracleStaleThreshold = 4,
+  OracleMaxDeviationBps = 5,
+}
+
+/**
+ * Payload for a scheduled critical config change.
+ */
+export type ConfigChangePayload = {tag: "Windows", values: readonly [u32, u32]} | {tag: "MaxStake", values: readonly [Option<i128>]} | {tag: "MaxUserRoundExposure", values: readonly [Option<i128>]} | {tag: "MaxPendingWinnings", values: readonly [Option<i128>]} | {tag: "OracleStaleThreshold", values: readonly [u64]} | {tag: "OracleMaxDeviationBps", values: readonly [Option<u32>]};
+
+/**
+ * Pending timelocked config change with activation ledger for on-chain observability.
+ */
+export interface PendingConfigChange {
+  payload: ConfigChangePayload;
+  activation_ledger: u32;
+  scheduled_at_ledger: u32;
+}
+
+/**
  * Storage keys for contract data
  * 
  * ## Indexed position keys (variants 13–15)
@@ -66,7 +92,7 @@ export type BetSide = {tag: "Up", values: void} | {tag: "Down", values: void};
  * Legacy single-key maps (`UpDownPositions`, `PrecisionPositions`) are kept for
  * backward-compatible reads during a migration window; they are no longer written.
  */
-export type DataKey = {tag: "Balance", values: readonly [string]} | {tag: "Admin", values: void} | {tag: "Oracle", values: void} | {tag: "SchemaVersion", values: void} | {tag: "ActiveRound", values: void} | {tag: "Positions", values: void} | {tag: "UpDownPositions", values: void} | {tag: "PrecisionPositions", values: void} | {tag: "PendingWinnings", values: readonly [string]} | {tag: "UserStats", values: readonly [string]} | {tag: "Paused", values: void} | {tag: "BetWindowLedgers", values: void} | {tag: "RunWindowLedgers", values: void} | {tag: "LastRoundId", values: void} | {tag: "Position", values: readonly [u64, string]} | {tag: "PrecisionPosition", values: readonly [u64, string]} | {tag: "PrecisionCommitment", values: readonly [u64, string]} | {tag: "RoundParticipants", values: readonly [u64]} | {tag: "MaxStake", values: void} | {tag: "MaxUserRoundExposure", values: void} | {tag: "MaxPendingWinnings", values: void} | {tag: "CancelledRound", values: readonly [u64]} | {tag: "ConsumedOracleNonce", values: readonly [u64, u64]} | {tag: "MinParticipants", values: void} | {tag: "OracleHeartbeat", values: void} | {tag: "OracleStaleThreshold", values: void} | {tag: "MaxPrecisionParticipants", values: void} | {tag: "OracleMaxDeviationBps", values: void} | {tag: "OracleDeviationOverrideArmed", values: void} | {tag: "ArchivedRound", values: readonly [u64]} | {tag: "RecentArchivedRoundIds", values: void};
+export type DataKey = {tag: "Balance", values: readonly [string]} | {tag: "Admin", values: void} | {tag: "Oracle", values: void} | {tag: "SchemaVersion", values: void} | {tag: "ActiveRound", values: void} | {tag: "Positions", values: void} | {tag: "UpDownPositions", values: void} | {tag: "PrecisionPositions", values: void} | {tag: "PendingWinnings", values: readonly [string]} | {tag: "UserStats", values: readonly [string]} | {tag: "Paused", values: void} | {tag: "BetWindowLedgers", values: void} | {tag: "RunWindowLedgers", values: void} | {tag: "LastRoundId", values: void} | {tag: "Position", values: readonly [u64, string]} | {tag: "PrecisionPosition", values: readonly [u64, string]} | {tag: "PrecisionCommitment", values: readonly [u64, string]} | {tag: "RoundParticipants", values: readonly [u64]} | {tag: "MaxStake", values: void} | {tag: "MaxUserRoundExposure", values: void} | {tag: "MaxPendingWinnings", values: void} | {tag: "CancelledRound", values: readonly [u64]} | {tag: "ConsumedOracleNonce", values: readonly [u64, u64]} | {tag: "MinParticipants", values: void} | {tag: "OracleHeartbeat", values: void} | {tag: "OracleStaleThreshold", values: void} | {tag: "MaxPrecisionParticipants", values: void} | {tag: "OracleMaxDeviationBps", values: void} | {tag: "OracleDeviationOverrideArmed", values: void} | {tag: "ArchivedRound", values: readonly [u64]} | {tag: "RecentArchivedRoundIds", values: void} | {tag: "PendingConfigChange", values: readonly [ConfigChangeKind]};
 
 /**
  * Round mode for prediction type
@@ -712,6 +738,40 @@ export interface Client {
    */
   set_max_precision_participants: ({max}: {max: u32}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
 
+  /**
+   * Construct and simulate a get_precision_predictions_page transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Returns a paginated slice of precision predictions for the active round.
+   */
+  get_precision_predictions_page: ({offset, limit}: {offset: u32, limit: u32}, options?: MethodOptions) => Promise<AssembledTransaction<Array<PrecisionPrediction>>>
+
+  /**
+   * Construct and simulate a get_updown_positions_page transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Returns a paginated slice of Up/Down positions for the active round.
+   */
+  get_updown_positions_page: ({offset, limit}: {offset: u32, limit: u32}, options?: MethodOptions) => Promise<AssembledTransaction<Array<readonly [string, UserPosition]>>>
+
+  /**
+   * Construct and simulate a schedule_windows transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Schedules a timelocked update to betting and execution windows (admin only).
+   */
+  schedule_windows: ({bet_ledgers, run_ledgers}: {bet_ledgers: u32, run_ledgers: u32}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
+
+  schedule_max_stake: ({max_amount}: {max_amount: Option<i128>}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
+
+  schedule_max_user_exposure: ({max_exposure}: {max_exposure: Option<i128>}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
+
+  schedule_max_pending_winnings: ({max_pending}: {max_pending: Option<i128>}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
+
+  schedule_oracle_stale_threshold: ({seconds}: {seconds: u64}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
+
+  schedule_oracle_deviation_bps: ({bps}: {bps: Option<u32>}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
+
+  get_pending_config_change: ({kind}: {kind: ConfigChangeKind}, options?: MethodOptions) => Promise<AssembledTransaction<Option<PendingConfigChange>>>
+
+  apply_scheduled_changes: ({kind}: {kind: ConfigChangeKind}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
+
+  cancel_config_change: ({kind}: {kind: ConfigChangeKind}, options?: MethodOptions) => Promise<AssembledTransaction<Result<void>>>
+
 }
 export class Client extends ContractClient {
   static async deploy<T = Client>(
@@ -730,7 +790,8 @@ export class Client extends ContractClient {
   }
   constructor(public readonly options: ContractClientOptions) {
     super(
-      new ContractSpec([ "AAAAAQAAAAAAAAAAAAAABVJvdW5kAAAAAAAACAAAAAAAAAAOYmV0X2VuZF9sZWRnZXIAAAAAAAQAAAAAAAAACmVuZF9sZWRnZXIAAAAAAAQAAAAAAAAABG1vZGUAAAfQAAAACVJvdW5kTW9kZQAAAAAAAAAAAAAJcG9vbF9kb3duAAAAAAAACwAAAAAAAAAHcG9vbF91cAAAAAALAAAAAAAAAAtwcmljZV9zdGFydAAAAAAKAAAAAAAAAAhyb3VuZF9pZAAAAAYAAAAAAAAADHN0YXJ0X2xlZGdlcgAAAAQ=",
+      new ContractSpec([
+"AAAAAQAAAAAAAAAAAAAABVJvdW5kAAAAAAAACAAAAAAAAAAOYmV0X2VuZF9sZWRnZXIAAAAAAAQAAAAAAAAACmVuZF9sZWRnZXIAAAAAAAQAAAAAAAAABG1vZGUAAAfQAAAACVJvdW5kTW9kZQAAAAAAAAAAAAAJcG9vbF9kb3duAAAAAAAACwAAAAAAAAAHcG9vbF91cAAAAAALAAAAAAAAAAtwcmljZV9zdGFydAAAAAAKAAAAAAAAAAhyb3VuZF9pZAAAAAYAAAAAAAAADHN0YXJ0X2xlZGdlcgAAAAQ=",
         "AAAAAgAAACNSZXByZXNlbnRzIHdoaWNoIHNpZGUgYSB1c2VyIGJldCBvbgAAAAAAAAAAB0JldFNpZGUAAAAAAgAAAAAAAAAAAAAAAlVwAAAAAAAAAAAAAAAAAAREb3du",
         "AAAAAgAAAppTdG9yYWdlIGtleXMgZm9yIGNvbnRyYWN0IGRhdGEKCiMjIEluZGV4ZWQgcG9zaXRpb24ga2V5cyAodmFyaWFudHMgMTPigJMxNSkKCmBQb3NpdGlvbihyb3VuZF9pZCwgYWRkcmVzcylgIGFuZCBgUHJlY2lzaW9uUG9zaXRpb24ocm91bmRfaWQsIGFkZHJlc3MpYCBzdG9yZQphIHNpbmdsZSB1c2VyJ3MgcmVjb3JkIHVuZGVyIGEgY29tcG9zaXRlIGtleSwgZW5hYmxpbmcgTygxKSByZWFkL3dyaXRlIHBlciB1c2VyCmluc3RlYWQgb2YgZGVzZXJpYWxpemluZyB0aGUgZnVsbCBwYXJ0aWNpcGFudCBtYXAgb24gZXZlcnkgYmV0LgoKYFJvdW5kUGFydGljaXBhbnRzKHJvdW5kX2lkKWAgaG9sZHMgdGhlIG9yZGVyZWQgYFZlYzxBZGRyZXNzPmAgdXNlZCBmb3IKaXRlcmF0aW9uIGF0IHJlc29sdXRpb24gdGltZS4gQXBwZW5kaW5nIG9uZSBhZGRyZXNzIGlzIGNoZWFwZXIgdGhhbgpyZS1zZXJpYWxpc2luZyBhbiBOLWVudHJ5IGBNYXA8QWRkcmVzcywgVD5gIGZvciBldmVyeSBiZXQgcGxhY2VkLgoKTGVnYWN5IHNpbmdsZS1rZXkgbWFwcyAoYFVwRG93blBvc2l0aW9uc2AsIGBQcmVjaXNpb25Qb3NpdGlvbnNgKSBhcmUga2VwdCBmb3IKYmFja3dhcmQtY29tcGF0aWJsZSByZWFkcyBkdXJpbmcgYSBtaWdyYXRpb24gd2luZG93OyB0aGV5IGFyZSBubyBsb25nZXIgd3JpdHRlbi4AAAAAAAAAAAAHRGF0YUtleQAAAAAfAAAAAQAAAAAAAAAHQmFsYW5jZQAAAAABAAAAEwAAAAAAAAAAAAAABUFkbWluAAAAAAAAAAAAAAAAAAAGT3JhY2xlAAAAAAAAAAAAdE9uLWNoYWluIHN0b3JhZ2Ugc2NoZW1hIHZlcnNpb24gZm9yIG1pZ3JhdGlvbiBzYWZldHkuCklmIG1pc3NpbmcsIHRoZSBjb250cmFjdCB0cmVhdHMgaXQgYXMgbGVnYWN5IHNjaGVtYSB2ZXJzaW9uIDEuAAAADVNjaGVtYVZlcnNpb24AAAAAAAAAAAAAAAAAAAtBY3RpdmVSb3VuZAAAAAAAAAAAAAAAAAlQb3NpdGlvbnMAAAAAAAAAAAAAAAAAAA9VcERvd25Qb3NpdGlvbnMAAAAAAAAAAAAAAAASUHJlY2lzaW9uUG9zaXRpb25zAAAAAAABAAAAAAAAAA9QZW5kaW5nV2lubmluZ3MAAAAAAQAAABMAAAABAAAAAAAAAAlVc2VyU3RhdHMAAAAAAAABAAAAEwAAAAAAAAAAAAAABlBhdXNlZAAAAAAAAAAAAAAAAAAQQmV0V2luZG93TGVkZ2VycwAAAAAAAAAAAAAAEFJ1bldpbmRvd0xlZGdlcnMAAAAAAAAAAAAAAAtMYXN0Um91bmRJZAAAAAABAAAAPlBlci11c2VyIFVwRG93biBwb3NpdGlvbjogKHJvdW5kX2lkLCBhZGRyZXNzKSDihpIgVXNlclBvc2l0aW9uAAAAAAAIUG9zaXRpb24AAAACAAAABgAAABMAAAABAAAASlBlci11c2VyIFByZWNpc2lvbiBwcmVkaWN0aW9uOiAocm91bmRfaWQsIGFkZHJlc3MpIOKGkiBQcmVjaXNpb25QcmVkaWN0aW9uAAAAAAARUHJlY2lzaW9uUG9zaXRpb24AAAAAAAACAAAABgAAABMAAAABAAAASlBlci11c2VyIFByZWNpc2lvbiBjb21taXRtZW50OiAocm91bmRfaWQsIGFkZHJlc3MpIOKGkiBQcmVjaXNpb25Db21taXRtZW50AAAAAAATUHJlY2lzaW9uQ29tbWl0bWVudAAAAAACAAAABgAAABMAAAABAAAAP09yZGVyZWQgcGFydGljaXBhbnQgbGlzdCBmb3IgYSByb3VuZDogcm91bmRfaWQg4oaSIFZlYzxBZGRyZXNzPgAAAAARUm91bmRQYXJ0aWNpcGFudHMAAAAAAAABAAAABgAAAAAAAAA7TWF4aW11bSBzdGFrZSBhbGxvd2VkIHBlciBpbmRpdmlkdWFsIGJldCAoTm9uZSA9IHVubGltaXRlZCkAAAAACE1heFN0YWtlAAAAAAAAAEFNYXhpbXVtIGN1bXVsYXRpdmUgZXhwb3N1cmUgcGVyIHVzZXIgcGVyIHJvdW5kIChOb25lID0gdW5saW1pdGVkKQAAAAAAABRNYXhVc2VyUm91bmRFeHBvc3VyZQAAAAAAAAA/TWF4aW11bSBwZW5kaW5nIHdpbm5pbmdzIGFsbG93ZWQgcGVyIGFjY291bnQgKE5vbmUgPSB1bmxpbWl0ZWQpAAAAABJNYXhQZW5kaW5nV2lubmluZ3MAAAAAAAEAAAAvTWFya2VyIGZvciBhIGNhbmNlbGxlZCByb3VuZDogcm91bmRfaWQg4oaSIHRydWUAAAAADkNhbmNlbGxlZFJvdW5kAAAAAAABAAAABgAAAAEAAACEUGVyLXJvdW5kIGNvbnN1bWVkIG9yYWNsZSBub25jZTogKHJvdW5kX2lkLCBub25jZSkg4oaSIHRydWUuClVzZWQgdG8gcmVqZWN0IGR1cGxpY2F0ZSBvcmFjbGUgcGF5bG9hZCBzdWJtaXNzaW9ucyBmb3IgdGhlIHNhbWUgcm91bmQuAAAAE0NvbnN1bWVkT3JhY2xlTm9uY2UAAAAAAgAAAAYAAAAGAAAAAAAAAFFNaW5pbXVtIHBhcnRpY2lwYW50IGNvdW50IGZvciBjb21wZXRpdGl2ZSBzZXR0bGVtZW50OyB1bnNldCA9IG5vIG1pbmltdW0gZW5mb3JjZWQAAAAAAAAPTWluUGFydGljaXBhbnRzAAAAAAAAAAA0T3JhY2xlIGhlYXJ0YmVhdDogbGFzdCByZWNvcmRlZCB0aW1lc3RhbXAgYW5kIHN0YXR1cwAAAA9PcmFjbGVIZWFydGJlYXQAAAAAAAAAAFFTdGFsZS1oZWFydGJlYXQgdGhyZXNob2xkIGluIHNlY29uZHMgKGFkbWluLWNvbmZpZ3VyYWJsZSk7IHVuc2V0ID0gMzYwMCBzIGRlZmF1bHQAAAAAAAAUT3JhY2xlU3RhbGVUaHJlc2hvbGQAAAAAAAAATE1heGltdW0gcGFydGljaXBhbnRzIGFjY2VwdGVkIGluIGEgUHJlY2lzaW9uIHJvdW5kOyB1bnNldCA9IHByb3RvY29sIGRlZmF1bHQAAAAYTWF4UHJlY2lzaW9uUGFydGljaXBhbnRzAAAAAAAAAGtPcmFjbGUgbWF4IGRldmlhdGlvbiB0aHJlc2hvbGQgaW4gYmFzaXMgcG9pbnRzICgxIGJwID0gMC4wMSUpLgpJZiB1bnNldCwgZGV2aWF0aW9uIGd1YXJkcmFpbHMgYXJlIGRpc2FibGVkLgAAAAAVT3JhY2xlTWF4RGV2aWF0aW9uQnBzAAAAAAAAAAAAAHFPbmUtc2hvdCBhZG1pbiBvdmVycmlkZSBhbGxvd2luZyB0aGUgbmV4dCBzZXR0bGVtZW50IHRvIGJ5cGFzcyBkZXZpYXRpb24gY2hlY2tzLgpBdXRvbWF0aWNhbGx5IGNsZWFyZWQgYWZ0ZXIgdXNlLgAAAAAAABxPcmFjbGVEZXZpYXRpb25PdmVycmlkZUFybWVkAAAAAQAAAElDb21wYWN0IHBvc3Qtc2V0dGxlbWVudCBzdW1tYXJ5IGtleWVkIGJ5IHJvdW5kIGlkIGZvciBoaXN0b3JpY2FsIHF1ZXJpZXMuAAAAAAAADUFyY2hpdmVkUm91bmQAAAAAAAABAAAABgAAAAAAAAA8T3JkZXJlZCByb3VuZCBpZHMgZm9yIGFyY2hpdmUgcmV0ZW50aW9uIChvbGRlc3QgYXQgaW5kZXggMCkuAAAAFlJlY2VudEFyY2hpdmVkUm91bmRJZHMAAA==",
         "AAAAAwAAAB5Sb3VuZCBtb2RlIGZvciBwcmVkaWN0aW9uIHR5cGUAAAAAAAAAAAAJUm91bmRNb2RlAAAAAAAAAgAAAAAAAAAGVXBEb3duAAAAAAAAAAAAAAAAAAlQcmVjaXNpb24AAAAAAAAB",
@@ -762,6 +823,7 @@ export class Client extends ContractClient {
         "AAAAAAAAAJRSZXR1cm5zIGB0cnVlYCBpZiB0aGUgb3JhY2xlIGhhcyBhIG5vbi1zdGFsZSBoZWFydGJlYXQgd2l0aCBzdGF0dXMgbm90IG9mZmxpbmUgKDIpLgpVc2VzIHRoZSBjb25maWd1cmVkIHN0YWxlIHRocmVzaG9sZCwgZGVmYXVsdGluZyB0byAzNjAwIHNlY29uZHMuAAAADmlzX29yYWNsZV9saXZlAAAAAAAAAAAAAQAAAAE=",
         "AAAAAAAAADdQYXVzZXMgdGhlIGNvbnRyYWN0IGZvciBlbWVyZ2VuY3kgcmVjb3ZlcnkgKGFkbWluIG9ubHkpAAAAAA5wYXVzZV9jb250cmFjdAAAAAAAAAAAAAEAAAPpAAAD7QAAAAAAAAfQAAAADUNvbnRyYWN0RXJyb3IAAAA=",
         "AAAAAAAAACpSZXR1cm5zIHRoZSBjdXJyZW50bHkgYWN0aXZlIHJvdW5kLCBpZiBhbnkAAAAAABBnZXRfYWN0aXZlX3JvdW5kAAAAAAAAAAEAAAPoAAAH0AAAAAVSb3VuZAAAAA==",
+        "AAAAAAAAAKRTY2hlZHVsZXMgYSB0aW1lbG9ja2VkIHVwZGF0ZSB0byBiZXR0aW5nIGFuZCBleGVjdXRpb24gd2luZG93cyAoYWRtaW4gb25seSkuClRoZSBjaGFuZ2UgaXMgc3RvcmVkIHBlbmRpbmcgdW50aWwgYGFwcGx5X3NjaGVkdWxlZF9jaGFuZ2VzYCBpcyBjYWxsZWQgYWZ0ZXIgdGhlIGRlbGF5LgAAABBzY2hlZHVsZV93aW5kb3dzAAAAAgAAAAAAAAALYmV0X2xlZGdlcnMAAAAABAAAAAAAAAALcnVuX2xlZGdlcnMAAAAABAAAAAEAAAPpAAAD7QAAAAAAAAfQAAAADUNvbnRyYWN0RXJyb3IAAAA=",
         "AAAAAAAAADFVbnBhdXNlcyB0aGUgY29udHJhY3QgYWZ0ZXIgcmVjb3ZlcnkgKGFkbWluIG9ubHkpAAAAAAAAEHVucGF1c2VfY29udHJhY3QAAAAAAAAAAQAAA+kAAAPtAAAAAAAAB9AAAAANQ29udHJhY3RFcnJvcgAAAA==",
         "AAAAAAAAAEJDb21taXRzIGEgaGFzaGVkIHByZWRpY3Rpb24gYW5kIHN0YWtlIGFtb3VudCAoUHJlY2lzaW9uIG1vZGUgb25seSkAAAAAABFjb21taXRfcHJlZGljdGlvbgAAAAAAAAMAAAAAAAAABHVzZXIAAAATAAAAAAAAAARoYXNoAAAD7gAAACAAAAAAAAAABmFtb3VudAAAAAAACwAAAAEAAAPpAAAD7QAAAAAAAAfQAAAADUNvbnRyYWN0RXJyb3IAAAA=",
         "AAAAAAAAAEVSZXR1cm5zIHRoZSBJRCBvZiB0aGUgbGFzdCBjcmVhdGVkIHJvdW5kICgwIGlmIG5vIHJvdW5kcyBjcmVhdGVkIHlldCkAAAAAAAARZ2V0X2xhc3Rfcm91bmRfaWQAAAAAAAAAAAAAAQAAAAY=",
@@ -781,6 +843,7 @@ export class Client extends ContractClient {
         "AAAAAAAAAJ1SZWNvcmRzIGFuIG9yYWNsZSBoZWFydGJlYXQgKG9yYWNsZSBvbmx5KS4KYHN0YXR1c2A6IDAgPSBhY3RpdmUsIDEgPSBkZWdyYWRlZCwgMiA9IG9mZmxpbmUuClN0b3JlcyBjdXJyZW50IGxlZGdlciB0aW1lc3RhbXA7IGVtaXRzIGAoIm9yYWNsZSIsICJoZWFydGJlYXQiKWAuAAAAAAAAF3VwZGF0ZV9vcmFjbGVfaGVhcnRiZWF0AAAAAAEAAAAAAAAABnN0YXR1cwAAAAAABAAAAAEAAAPpAAAD7QAAAAAAAAfQAAAADUNvbnRyYWN0RXJyb3IAAAA=",
         "AAAAAAAAADlSZXR1cm5zIHRoZSBjdXJyZW50IG1heGltdW0gcGVuZGluZyB3aW5uaW5ncyBjYXAsIGlmIHNldC4AAAAAAAAYZ2V0X21heF9wZW5kaW5nX3dpbm5pbmdzAAAAAAAAAAEAAAPoAAAACw==",
         "AAAAAAAAAGNTZXRzIHRoZSBtYXhpbXVtIHBlbmRpbmcgd2lubmluZ3MgYWxsb3dlZCBwZXIgYWNjb3VudCAoYWRtaW4gb25seSkuClBhc3MgYE5vbmVgIHRvIGRpc2FibGUgdGhlIGNhcC4AAAAAGHNldF9tYXhfcGVuZGluZ193aW5uaW5ncwAAAAEAAAAAAAAAC21heF9wZW5kaW5nAAAAA+gAAAALAAAAAQAAA+kAAAPtAAAAAAAAB9AAAAANQ29udHJhY3RFcnJvcgAAAA==",
+        "AAAAAAAAAEZSZXR1cm5zIGEgcGVuZGluZyB0aW1lbG9ja2VkIGNvbmZpZyBjaGFuZ2UgZm9yIHRoZSBnaXZlbiBraW5kLCBpZiBhbnkuAAAAAAAZZ2V0X3BlbmRpbmdfY29uZmlnX2NoYW5nZQAAAAAAAAEAAAAAAAAABGtpbmQAAAfQAAAAEENvbmZpZ0NoYW5nZUtpbmQAAAABAAAD6AAAB9AAAAATUGVuZGluZ0NvbmZpZ0NoYW5nZQA=",
         "AAAAAAAAANZSZXR1cm5zIGFsbCBwcmVjaXNpb24gcHJlZGljdGlvbnMgZm9yIHRoZSBjdXJyZW50IHJvdW5kLgoKUmVhZHMgdGhlIHBhcnRpY2lwYW50IGxpc3Qgb25jZSwgdGhlbiBmZXRjaGVzIGVhY2ggcHJlZGljdGlvbiBpbmRpdmlkdWFsbHkuClRvdGFsIHJlYWRzOiAxIChwYXJ0aWNpcGFudCBsaXN0KSArIE4gKHByZWRpY3Rpb25zKSBpbnN0ZWFkIG9mIDEgbGFyZ2UgbWFwIGJsb2IuAAAAAAAZZ2V0X3ByZWNpc2lvbl9wcmVkaWN0aW9ucwAAAAAAAAAAAAABAAAD6gAAB9AAAAATUHJlY2lzaW9uUHJlZGljdGlvbgA=",
         "AAAAAAAAAFJSZXR1cm5zIHRoZSBjb25maWd1cmVkIG9yYWNsZSBzdGFsZSB0aHJlc2hvbGQsIG9yIHRoZSBkZWZhdWx0ICgzNjAwIHMpIGlmIG5vdCBzZXQuAAAAAAAaZ2V0X29yYWNsZV9zdGFsZV90aHJlc2hvbGQAAAAAAAAAAAABAAAABg==",
         "AAAAAAAAAK5SZXR1cm5zIHVwIHRvIGBsaW1pdGAgbW9zdCByZWNlbnRseSBhcmNoaXZlZCByb3VuZHMgKG5ld2VzdCBmaXJzdCkuCgpQYXNzIGBsaW1pdCA9IDBgIHRvIHJlY2VpdmUgYW4gZW1wdHkgbGlzdC4gVmFsdWVzIGFib3ZlIFtgTUFYX0FSQ0hJVkVEX1JPVU5EU2BdCmFyZSBjYXBwZWQgYXV0b21hdGljYWxseS4AAAAAABpnZXRfcmVjZW50X2FyY2hpdmVkX3JvdW5kcwAAAAAAAQAAAAAAAAAFbGltaXQAAAAAAAAEAAAAAQAAA+oAAAfQAAAAFEFyY2hpdmVkUm91bmRTdW1tYXJ5",
@@ -844,6 +907,17 @@ export class Client extends ContractClient {
         arm_oracle_deviation_override: this.txFromJSON<Result<void>>,
         get_user_precision_prediction: this.txFromJSON<Option<PrecisionPrediction>>,
         get_max_precision_participants: this.txFromJSON<u32>,
-        set_max_precision_participants: this.txFromJSON<Result<void>>
+        set_max_precision_participants: this.txFromJSON<Result<void>>,
+        get_precision_predictions_page: this.txFromJSON<Array<PrecisionPrediction>>,
+        get_updown_positions_page: this.txFromJSON<Array<readonly [string, UserPosition]>>,
+        schedule_windows: this.txFromJSON<Result<void>>,
+        schedule_max_stake: this.txFromJSON<Result<void>>,
+        schedule_max_user_exposure: this.txFromJSON<Result<void>>,
+        schedule_max_pending_winnings: this.txFromJSON<Result<void>>,
+        schedule_oracle_stale_threshold: this.txFromJSON<Result<void>>,
+        schedule_oracle_deviation_bps: this.txFromJSON<Result<void>>,
+        get_pending_config_change: this.txFromJSON<Option<PendingConfigChange>>,
+        apply_scheduled_changes: this.txFromJSON<Result<void>>,
+        cancel_config_change: this.txFromJSON<Result<void>>
   }
 }

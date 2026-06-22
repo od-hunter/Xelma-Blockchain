@@ -1,5 +1,6 @@
 //! Tests for round mode flag and separate prediction storage.
 
+use super::config_helpers::{apply_max_stake, apply_max_user_exposure, apply_windows};
 use crate::contract::{VirtualTokenContract, VirtualTokenContractClient};
 use crate::errors::ContractError;
 use crate::types::{BetSide, OraclePayload, RoundMode};
@@ -788,7 +789,7 @@ fn test_windows_update_event() {
     client.initialize(&admin, &oracle);
 
     // Update windows - should emit windows updated event
-    client.set_windows(&10, &30);
+    apply_windows(&env, &client, 10, 30);
 
     let windows_events = env
         .events()
@@ -819,7 +820,7 @@ fn test_precision_prediction_exceeds_max_stake_fails() {
     env.mock_all_auths();
     client.initialize(&admin, &oracle);
     client.mint_initial(&user);
-    client.set_max_stake(&Some(50_0000000i128));
+    apply_max_stake(&env, &client, Some(50_0000000i128));
     client.create_round(&1_0000000, &Some(1));
 
     let result = client.try_place_precision_prediction(&user, &100_0000000, &2297u128);
@@ -839,7 +840,7 @@ fn test_precision_prediction_at_max_stake_boundary_succeeds() {
     env.mock_all_auths();
     client.initialize(&admin, &oracle);
     client.mint_initial(&user);
-    client.set_max_stake(&Some(100_0000000i128));
+    apply_max_stake(&env, &client, Some(100_0000000i128));
     client.create_round(&1_0000000, &Some(1));
 
     // Exactly at cap — must succeed
@@ -860,7 +861,7 @@ fn test_precision_prediction_exposure_cap_exceeded_fails() {
     env.mock_all_auths();
     client.initialize(&admin, &oracle);
     client.mint_initial(&user);
-    client.set_max_user_exposure(&Some(75_0000000i128));
+    apply_max_user_exposure(&env, &client, Some(75_0000000i128));
     client.create_round(&1_0000000, &Some(1));
 
     let result = client.try_place_precision_prediction(&user, &80_0000000, &2297u128);

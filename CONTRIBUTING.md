@@ -46,7 +46,8 @@ The CI `security-audit` job runs two checks that maintainers and contributors ca
 
 ```bash
 # Install once
-cargo install cargo-audit --locked
+# Install once (pin matches CI CARGO_AUDIT_VERSION in .github/workflows/ci.yml)
+cargo install cargo-audit --version 0.22.2 --locked
 
 # Run from the repo root
 cargo audit --deny warnings

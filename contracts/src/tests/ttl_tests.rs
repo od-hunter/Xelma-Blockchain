@@ -1,5 +1,6 @@
 //! Tests for storage TTL rent policy enforcement (Issue #142).
 
+use super::config_helpers::apply_max_stake;
 use crate::contract::{VirtualTokenContract, VirtualTokenContractClient};
 use crate::types::DataKey;
 use soroban_sdk::testutils::storage::Persistent as _;
@@ -73,7 +74,7 @@ fn test_paused_and_configs_ttl_extended_on_calls() {
     client.initialize(&admin, &oracle);
 
     // Set and get max stake to trigger TTL extensions
-    client.set_max_stake(&Some(100_000_000_000));
+    apply_max_stake(&env, &client, Some(100_000_000_000));
     client.get_max_stake();
 
     let max_stake_ttl = env.as_contract(&contract_id, || {
