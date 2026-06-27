@@ -2,7 +2,7 @@
 
 use crate::contract::{VirtualTokenContract, VirtualTokenContractClient};
 use crate::errors::ContractError;
-use crate::types::{BetSide, DataKey, OraclePayload, PrecisionPrediction, Round, UserPosition};
+use crate::types::{BetSide, ConfigChangeKind, ConfigChangePayload, DataKey, OraclePayload, PrecisionPrediction, Round, UserPosition};
 use crate::types::{RoundArchiveStatus, RoundMode};
 use soroban_sdk::{
     symbol_short,
@@ -2194,4 +2194,448 @@ fn test_archive_retention_prunes_oldest() {
 
     let recent = client.get_recent_archived_rounds(&200);
     assert_eq!(recent.len(), 128);
+}
+
+// ============================================================================
+// RESOLVE ROUND — VALIDATION GUARDS (uncovered branches)
+// ============================================================================
+
+#[test]
+fn test_resolve_round_invalid_price_zero() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.create_round(&1_0000000, &None);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+    });
+
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 0,
+        timestamp: env.ledger().timestamp(),
+        round_id: 0,
+        nonce: 1,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
+    });
+    assert_eq!(result, Err(Ok(ContractError::InvalidPrice)));
+}
+
+#[test]
+fn test_resolve_round_wrong_round_id() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.create_round(&1_0000000, &None);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+    });
+
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 2_0000000,
+        timestamp: env.ledger().timestamp(),
+        round_id: 999,
+        nonce: 1,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
+    });
+    assert_eq!(result, Err(Ok(ContractError::InvalidOracleRound)));
+}
+
+#[test]
+fn test_resolve_round_network_mismatch() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.create_round(&1_0000000, &None);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+    });
+
+    use soroban_sdk::BytesN;
+    let wrong_network = BytesN::from_array(&env, &[0u8; 32]);
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 2_0000000,
+        timestamp: env.ledger().timestamp(),
+        round_id: 0,
+        nonce: 1,
+        network_id: wrong_network,
+        contract_addr: contract_id.clone(),
+    });
+    assert_eq!(result, Err(Ok(ContractError::OracleNetworkMismatch)));
+}
+
+#[test]
+fn test_resolve_round_contract_mismatch() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.create_round(&1_0000000, &None);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+    });
+
+    let wrong_contract = Address::generate(&env);
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 2_0000000,
+        timestamp: env.ledger().timestamp(),
+        round_id: 0,
+        nonce: 1,
+        network_id: env.ledger().network_id(),
+        contract_addr: wrong_contract,
+    });
+    assert_eq!(result, Err(Ok(ContractError::OracleContractMismatch)));
+}
+
+#[test]
+fn test_resolve_round_future_timestamp() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.create_round(&1_0000000, &None);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+    });
+
+    let future_ts = env.ledger().timestamp() + 1000;
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 2_0000000,
+        timestamp: future_ts,
+        round_id: 0,
+        nonce: 1,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
+    });
+    assert_eq!(result, Err(Ok(ContractError::FutureOracleData)));
+}
+
+#[test]
+fn test_resolve_round_stale_data() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.create_round(&1_0000000, &None);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+    });
+
+    let stale_ts = env.ledger().timestamp() - 1000;
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 2_0000000,
+        timestamp: stale_ts,
+        round_id: 0,
+        nonce: 1,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
+    });
+    assert_eq!(result, Err(Ok(ContractError::StaleOracleData)));
+}
+
+#[test]
+fn test_resolve_round_nonce_reuse_same_round_rejected() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let user = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&user);
+    client.create_round(&1_0000000, &None);
+    client.place_bet(&user, &100_0000000, &BetSide::Up);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+    });
+
+    // Pre-seed a consumed nonce for this round to test the guard
+    let round = client.get_active_round().unwrap();
+    env.as_contract(&contract_id, || {
+        let nonce_key = DataKey::ConsumedOracleNonce(round.round_id, 42);
+        env.storage().persistent().set(&nonce_key, &true);
+    });
+
+    // Same nonce should be rejected before any state mutation
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 2_0000000,
+        timestamp: env.ledger().timestamp(),
+        round_id: 0,
+        nonce: 42,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
+    });
+    assert_eq!(result, Err(Ok(ContractError::OracleNonceReused)));
+}
+
+#[test]
+fn test_resolve_round_before_end_ledger() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.create_round(&1_0000000, &None);
+
+    // Do not advance ledger past end_ledger
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 2_0000000,
+        timestamp: env.ledger().timestamp(),
+        round_id: 0,
+        nonce: 1,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
+    });
+    assert_eq!(result, Err(Ok(ContractError::RoundNotEnded)));
+}
+
+#[test]
+fn test_resolve_round_deviation_exceeded() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let user = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&user);
+    client.create_round(&1_0000000, &None);
+    client.place_bet(&user, &100_0000000, &BetSide::Up);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+    });
+
+    // Set deviation threshold to a very tight 100 bps (1%)
+    crate::tests::config_helpers::apply_oracle_max_deviation_bps(
+        &env,
+        &client,
+        Some(100),
+    );
+
+    // Price goes from 1.0 to 2.0 = 100% change >> 1% threshold
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 2_0000000,
+        timestamp: env.ledger().timestamp(),
+        round_id: 0,
+        nonce: 1,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
+    });
+    assert_eq!(result, Err(Ok(ContractError::OracleDeviationExceeded)));
+}
+
+#[test]
+fn test_resolve_round_deviation_override_allows_through() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let user = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&user);
+    client.create_round(&1_0000000, &None);
+    client.place_bet(&user, &100_0000000, &BetSide::Up);
+
+    // Set tight deviation threshold
+    crate::tests::config_helpers::apply_oracle_max_deviation_bps(
+        &env,
+        &client,
+        Some(100),
+    );
+
+    // Arm the override
+    client.arm_oracle_deviation_override();
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+    });
+
+    // Price jump that would exceed deviation, but override is armed
+    client.resolve_round(&OraclePayload {
+        price: 2_0000000,
+        timestamp: env.ledger().timestamp(),
+        round_id: 0,
+        nonce: 1,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
+    });
+
+    // Round should be resolved normally despite deviation
+    assert!(client.get_active_round().is_none());
+    assert!(client.get_pending_winnings(&user) > 0);
+}
+
+#[test]
+fn test_pending_winnings_cap_exceeded() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    let user = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+    client.mint_initial(&user);
+
+    // Set pending winnings cap to 100
+    crate::tests::config_helpers::apply_max_pending_winnings(
+        &env,
+        &client,
+        Some(100),
+    );
+
+    // Manually set pending winnings to 100 (at cap)
+    env.as_contract(&contract_id, || {
+        use crate::types::DataKey;
+        env.storage()
+            .persistent()
+            .set(&DataKey::PendingWinnings(user.clone()), &100_i128);
+    });
+
+    // Create a round where user wins 1, which would exceed the cap
+    client.create_round(&1_0000000, &None);
+    client.place_bet(&user, &1, &BetSide::Up);
+
+    let bob = Address::generate(&env);
+    client.mint_initial(&bob);
+    client.place_bet(&bob, &1, &BetSide::Down);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+    });
+
+    // Resolution should fail with PendingWinningsCapExceeded
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 2_0000000,
+        timestamp: env.ledger().timestamp(),
+        round_id: 0,
+        nonce: 1,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
+    });
+    assert_eq!(result, Err(Ok(ContractError::PendingWinningsCapExceeded)));
+}
+
+#[test]
+fn test_oracle_stale_threshold_validation() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+
+    // Below minimum (60)
+    let result = client.try_schedule_oracle_stale_threshold(&59);
+    assert_eq!(result, Err(Ok(ContractError::InvalidStaleThreshold)));
+
+    // Above maximum (86400)
+    let result = client.try_schedule_oracle_stale_threshold(&86401);
+    assert_eq!(result, Err(Ok(ContractError::InvalidStaleThreshold)));
+
+    // At minimum boundary
+    client.schedule_oracle_stale_threshold(&60);
+    let pending = client
+        .get_pending_config_change(&ConfigChangeKind::OracleStaleThreshold)
+        .unwrap();
+    assert_eq!(
+        pending.payload,
+        ConfigChangePayload::OracleStaleThreshold(60)
+    );
+
+    // At maximum boundary
+    crate::tests::config_helpers::apply_oracle_stale_threshold(&env, &client, 86400);
+    assert_eq!(client.get_oracle_stale_threshold(), 86400);
+}
+
+#[test]
+fn test_oracle_deviation_bps_validation() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+
+    // Zero bps is invalid
+    let result = client.try_schedule_oracle_deviation_bps(&Some(0));
+    assert_eq!(result, Err(Ok(ContractError::InvalidOracleDeviationBps)));
+
+    // Above max (100000)
+    let result = client.try_schedule_oracle_deviation_bps(&Some(100_001));
+    assert_eq!(result, Err(Ok(ContractError::InvalidOracleDeviationBps)));
+
+    // Valid value accepted
+    client.schedule_oracle_deviation_bps(&Some(1));
+    let pending = client
+        .get_pending_config_change(&ConfigChangeKind::OracleMaxDeviationBps)
+        .unwrap();
+    assert_eq!(
+        pending.payload,
+        ConfigChangePayload::OracleMaxDeviationBps(Some(1))
+    );
 }
