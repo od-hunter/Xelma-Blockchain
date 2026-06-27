@@ -389,6 +389,20 @@ export const ContractError = {
   48: {message:"InvalidPrecisionParticipantCap"}
 }
 
+/**
+ * Decode contract error code to human‑readable message.
+ * @param code Numeric error code returned by the contract.
+ * @returns Friendly message for UI or wallet integration.
+ */
+export function ContractErrorDecoder(code: number): string {
+  const err = (ContractError as any)[code];
+  if (err && err.message) {
+    return err.message;
+  }
+  return `Unknown contract error code ${code}`;
+}
+
+
 export interface Client {
   /**
    * Construct and simulate a balance transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
