@@ -344,49 +344,99 @@ export const ContractError = {
    */
   37: {message:"InvalidStaleThreshold"},
   /**
-   * Oracle max deviation bps is invalid (must be > 0)
+   * Precision participant cap is out of range (must be 1–10000)
    */
-  38: {message:"InvalidOracleDeviationBps"},
-  /**
-   * Oracle final price deviates beyond configured threshold
-   */
-  39: {message:"OracleDeviationExceeded"},
-  /**
-   * Stored schema version is unknown or unsupported by this contract build
-   */
-  40: {message:"UnsupportedSchemaVersion"},
-  /**
-   * Migration path is invalid for the stored schema version
-   */
-  41: {message:"InvalidMigrationPath"},
-  /**
-   * Migration cannot run while a round is active
-   */
-  42: {message:"MigrationActiveRound"},
-  /**
-   * Commitment for precision prediction not found
-   */
-  43: {message:"CommitmentNotFound"},
-  /**
-   * Precision prediction has already been revealed
-   */
-  44: {message:"AlreadyRevealed"},
-  /**
-   * Attempted to reveal prediction outside the valid window
-   */
-  45: {message:"InvalidRevealWindow"},
-  /**
-   * Revealed prediction hash does not match committed hash
-   */
-  46: {message:"HashMismatch"},
+   38: {message:"InvalidPrecisionParticipantCap"},
   /**
    * Precision round has reached the configured participant cap
    */
-  47: {message:"PrecisionParticipantCapExceeded"},
+   39: {message:"PrecisionParticipantCapExceeded"},
   /**
-   * Precision participant cap is out of range (must be 1–10000)
+   * Oracle max deviation bps is invalid (must be > 0)
    */
-  48: {message:"InvalidPrecisionParticipantCap"}
+  40: {message:"InvalidOracleDeviationBps"},
+  /**
+   * Oracle final price deviates beyond configured threshold
+   */
+  41: {message:"OracleDeviationExceeded"},
+  /**
+   * Stored schema version is unknown or unsupported by this contract build
+   */
+  42: {message:"UnsupportedSchemaVersion"},
+  /**
+   * Migration path is invalid for the stored schema version
+   */
+  43: {message:"InvalidMigrationPath"},
+  /**
+   * Migration cannot run while a round is active
+   */
+  44: {message:"MigrationActiveRound"},
+  /**
+   * Commitment for precision prediction not found
+   */
+  45: {message:"CommitmentNotFound"},
+  /**
+   * Precision prediction has already been revealed
+   */
+  46: {message:"AlreadyRevealed"},
+  /**
+   * Attempted to reveal prediction outside the valid window
+   */
+  47: {message:"InvalidRevealWindow"},
+  /**
+   * Revealed prediction hash does not match committed hash
+   */
+  48: {message:"HashMismatch"},
+  /**
+   * Oracle payload network_id does not match the runtime network
+   */
+   49: {message:"OracleNetworkMismatch"},
+  /**
+   * Oracle payload contract_addr does not match the current contract
+   */
+   50: {message:"OracleContractMismatch"},
+  /**
+   * Protocol fee bps is outside the allowed range (must be in 1..=MAX_PROTOCOL_FEE_BPS)
+   */
+   51: {message:"InvalidProtocolFeeBps"},
+  /**
+   * Treasury withdrawal would underflow the accumulated treasury balance
+   */
+   52: {message:"FeeTreasuryUnderflow"}
+}
+
+/**
+ * Decodes a contract error code into a structured result suitable for wallet UX.
+ * @param code - The on-chain u32 error code returned by the contract.
+ * @returns An object with the code, variant name, and human-readable message, or null if the code is unknown.
+ */
+export function decodeContractError(code: number): {
+  code: number;
+  variant: string;
+  message: string;
+} | null {
+  const entry = ContractError[code];
+  if (!entry) {
+    return null;
+  }
+  return {
+    code,
+    variant: entry.message,
+    message: entry.message,
+  };
+}
+
+/**
+ * Formats a contract error code into a user-facing string for wallet display.
+ * Returns a fallback for unknown codes.
+ * @param code - The on-chain u32 error code returned by the contract.
+ */
+export function formatContractError(code: number): string {
+  const decoded = decodeContractError(code);
+  if (!decoded) {
+    return `Unknown contract error (code ${code})`;
+  }
+  return `${decoded.message} (code ${code})`;
 }
 
 export interface Client {
