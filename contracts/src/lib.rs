@@ -3,6 +3,7 @@
 //!
 //! Secure Soroban-based prediction market for XLM price movements.
 //! Users bet on price direction (UP/DOWN) using virtual XLM tokens
+
 //!
 //! ## Key Features
 //! - Role-based access control (Admin, Oracle, Users)
