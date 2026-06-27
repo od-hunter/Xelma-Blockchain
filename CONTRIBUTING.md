@@ -78,6 +78,28 @@ as warnings that are surfaced in the audit job output; errors `-D` will fail the
 > the `rust-test` job. It is normal for code that passes standard clippy to have findings here.
 > Fix or document each finding before merging contract changes.
 
+## Code Coverage
+
+Before opening a PR, verify that critical contract paths remain covered:
+
+```bash
+# Install cargo-llvm-cov (one-time)
+cargo install cargo-llvm-cov
+
+# Generate coverage for the workspace
+cargo llvm-cov --all-features --workspace --locked
+```
+
+To view a detailed HTML report:
+
+```bash
+cargo llvm-cov --all-features --workspace --html --output-dir coverage-report --locked
+# Open coverage-report/html/index.html in a browser
+```
+
+CI enforces a 90% line-coverage threshold on `contracts/src/contract.rs` and
+80% overall workspace coverage.
+
 ## Canonical Contract Crate
 
 The contract crate name is `xelma-contract`. Do not reintroduce legacy crate naming in build scripts, docs, or CI commands.

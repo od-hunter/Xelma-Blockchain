@@ -2639,3 +2639,36 @@ fn test_oracle_deviation_bps_validation() {
         ConfigChangePayload::OracleMaxDeviationBps(Some(1))
     );
 }
+
+#[test]
+fn test_resolve_round_oracle_not_set() {
+    let env = Env::default();
+    let contract_id = env.register(VirtualTokenContract, ());
+    let client = VirtualTokenContractClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let oracle = Address::generate(&env);
+    env.mock_all_auths();
+
+    client.initialize(&admin, &oracle);
+
+    env.as_contract(&contract_id, || {
+        env.storage().persistent().remove(&DataKey::Oracle);
+    });
+
+    client.create_round(&1_0000000, &None);
+
+    env.ledger().with_mut(|li| {
+        li.sequence_number = 12;
+    });
+
+    let result = client.try_resolve_round(&OraclePayload {
+        price: 1_5000000,
+        timestamp: env.ledger().timestamp(),
+        round_id: 0,
+        nonce: 1,
+        network_id: env.ledger().network_id(),
+        contract_addr: contract_id.clone(),
+    });
+    assert_eq!(result, Err(Ok(ContractError::OracleNotSet)));
+}
