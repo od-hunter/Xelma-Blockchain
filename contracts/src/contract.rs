@@ -10,7 +10,8 @@ use crate::errors::ContractError;
 use crate::types::{
     ArchivedRoundSummary, BetSide, ConfigChangeKind, ConfigChangePayload, DataKey,
     OracleHeartbeatRecord, OraclePayload, PendingConfigChange, PrecisionCommitment,
-    PrecisionPrediction, ProtocolHealthStatus, Round, RoundArchiveStatus, RoundMode, UserOutcomeType,
+    PrecisionPrediction, ProtocolHealthStatus, Round, RoundArchiveStatus, RoundMode, RoundPhase,
+    UserOutcomeType,
     UserPosition, UserRoundOutcome, UserStats,
 };
 
@@ -367,6 +368,23 @@ impl VirtualTokenContract {
         env.storage().persistent().get(&DataKey::ActiveRound)
     }
 
+    /// Returns the current lifecycle phase of the active round.
+    ///
+    /// Phase boundaries are deterministic:
+    /// - `Betting` while `ledger < bet_end_ledger`
+    /// - `Running` while `bet_end_ledger ≤ ledger < end_ledger`
+    /// - `Resolvable` when `ledger ≥ end_ledger`
+    ///
+    /// Returns [`ContractError::NoActiveRound`] when no round is active.
+    pub fn get_round_phase(env: Env) -> Result<RoundPhase, ContractError> {
+        let round = env
+            .storage()
+            .persistent()
+            .get::<_, Round>(&DataKey::ActiveRound)
+            .ok_or(ContractError::NoActiveRound)?;
+        Ok(Self::_derive_round_phase(env.ledger().sequence(), &round))
+    }
+
     /// Returns the ID of the last created round (0 if no rounds created yet)
     pub fn get_last_round_id(env: Env) -> u64 {
         env.storage()
@@ -617,14 +635,8 @@ impl VirtualTokenContract {
         {
             None => (false, 0u32),
             Some(round) => {
-                let phase = if ledger_sequence < round.bet_end_ledger {
-                    1u32
-                } else if ledger_sequence < round.end_ledger {
-                    2u32
-                } else {
-                    3u32
-                };
-                (true, phase)
+                let phase = Self::_derive_round_phase(ledger_sequence, &round);
+                (true, phase as u32)
             }
         };
 
@@ -3313,6 +3325,17 @@ impl VirtualTokenContract {
         }
 
         Ok(())
+    }
+
+    /// Derives the round lifecycle phase for `round` at `ledger_sequence`.
+    fn _derive_round_phase(ledger_sequence: u32, round: &Round) -> RoundPhase {
+        if ledger_sequence < round.bet_end_ledger {
+            RoundPhase::Betting
+        } else if ledger_sequence < round.end_ledger {
+            RoundPhase::Running
+        } else {
+            RoundPhase::Resolvable
+        }
     }
 
     fn _schema_version(env: &Env) -> Option<u32> {
