@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Core contract implementation for the XLM Price Prediction Market.
 
 use soroban_sdk::xdr::ToXdr;

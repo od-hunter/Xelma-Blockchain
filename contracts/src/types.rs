@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Type definitions for the XLM Price Prediction Market.
 
 use soroban_sdk::{contracttype, Address, BytesN};

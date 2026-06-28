@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Gas/cost benchmark baselines with regression guardrails (Issue #121).
 //!
 //! These benchmarks measure the host CPU-instruction and memory cost of each

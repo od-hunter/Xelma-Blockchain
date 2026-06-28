@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Tests for round creation and full round lifecycle scenarios.
 
 use crate::contract::{VirtualTokenContract, VirtualTokenContractClient};

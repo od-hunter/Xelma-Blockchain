@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Contract error types for the XLM Price Prediction Market.
 
 use soroban_sdk::contracterror;

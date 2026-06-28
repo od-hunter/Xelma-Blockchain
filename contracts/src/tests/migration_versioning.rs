@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Tests for schema versioning and migration guards.
 
 use crate::contract::{VirtualTokenContract, VirtualTokenContractClient};

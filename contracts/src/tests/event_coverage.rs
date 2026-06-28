@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Event coverage and completeness verification tests (Issue #117).
 
 use super::config_helpers::apply_windows;

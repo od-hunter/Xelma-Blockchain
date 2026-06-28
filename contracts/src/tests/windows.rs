@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Tests for configurable betting and execution windows.
 
 use super::config_helpers::apply_windows;

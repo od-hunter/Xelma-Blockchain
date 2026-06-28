@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 #![no_std]
 //! # XLM Price Prediction Market
 //!

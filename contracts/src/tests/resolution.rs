@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Tests for round resolution and winnings distribution.
 
 use crate::contract::{VirtualTokenContract, VirtualTokenContractClient};
