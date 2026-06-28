@@ -100,6 +100,10 @@ pub enum DataKey {
     LedgerMintCounter(u32),
     /// Mint limit configuration: maximum number of mints allowed per ledger.
     MintLimitConfig,
+    /// Configurable archive retention limit: maximum number of ArchivedRound entries
+    /// retained on-chain before the oldest are pruned (FIFO). If unset, the protocol
+    /// default is used.
+    ArchiveRetention,
 }
 
 /// Identifies which critical risk setting is pending timelocked activation.

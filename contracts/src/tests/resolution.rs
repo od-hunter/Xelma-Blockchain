@@ -3,6 +3,7 @@
 use crate::contract::{VirtualTokenContract, VirtualTokenContractClient};
 use crate::errors::ContractError;
 use crate::types::{BetSide, DataKey, OraclePayload, PrecisionPrediction, Round, UserOutcomeType, UserPosition};
+use crate::types::{BetSide, ConfigChangeKind, ConfigChangePayload, DataKey, OraclePayload, PrecisionPrediction, Round, UserPosition};
 use crate::types::{RoundArchiveStatus, RoundMode};
 use soroban_sdk::{
     symbol_short,

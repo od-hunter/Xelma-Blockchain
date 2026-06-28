@@ -76,6 +76,32 @@ cd Xelma-Blockchain
 pip install pre-commit
 pre-commit install
 ```
+## Snapshot Tests
+
+The project uses storage-snapshot golden files (`contracts/test_snapshots/`) to detect
+unintentional changes to contract state, event emissions, and error behavior.
+
+### When snapshots should change
+
+- You modified contract logic, storage keys, event payloads, or error variants.
+- You made non-semantic refactors that still cause snapshot output to differ (rare).
+
+### When snapshots should NOT change
+
+- Your change is in an unrelated module, test infrastructure, or documentation.
+- CI reports snapshot drift that you did not intend — investigate before regenerating.
+
+### Updating snapshots
+
+After an intentional behavior change, regenerate golden files from the repo root:
+
+```bash
+./scripts/update_snapshots.sh
+```
+
+Then review the diff, run the full suite, and commit the updated snapshots alongside
+your logic change. See [`contracts/test_snapshots/README.md`](./contracts/test_snapshots/README.md)
+for a step-by-step guide.
 
 ## Security Checks (local)
 
@@ -116,6 +142,28 @@ as warnings that are surfaced in the audit job output; errors `-D` will fail the
 > **Note**: These lints are stricter than the standard `cargo clippy -- -D warnings` run in
 > the `rust-test` job. It is normal for code that passes standard clippy to have findings here.
 > Fix or document each finding before merging contract changes.
+
+## Code Coverage
+
+Before opening a PR, verify that critical contract paths remain covered:
+
+```bash
+# Install cargo-llvm-cov (one-time)
+cargo install cargo-llvm-cov
+
+# Generate coverage for the workspace
+cargo llvm-cov --all-features --workspace --locked
+```
+
+To view a detailed HTML report:
+
+```bash
+cargo llvm-cov --all-features --workspace --html --output-dir coverage-report --locked
+# Open coverage-report/html/index.html in a browser
+```
+
+CI enforces a 90% line-coverage threshold on `contracts/src/contract.rs` and
+80% overall workspace coverage.
 
 ## Canonical Contract Crate
 
