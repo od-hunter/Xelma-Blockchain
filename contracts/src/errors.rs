@@ -113,4 +113,6 @@ pub enum ContractError {
     FeeTreasuryUnderflow = 52,
     /// Rate limit for minting in the current ledger has been exceeded
     MintLimitExceeded = 53,
+    /// Archive retention limit is outside the allowed range
+    InvalidArchiveRetention = 54,
 }

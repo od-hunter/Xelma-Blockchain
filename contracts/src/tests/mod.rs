@@ -1,5 +1,6 @@
 //! Test modules for the XLM Price Prediction Market contract.
 
+mod archive_retention;
 mod betting;
 mod cei_ordering;
 mod chaos_recovery;

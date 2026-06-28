@@ -63,8 +63,12 @@ const TTL_BUMP_THRESHOLD: u32 = 17_280; // ~1 day at 5-second ledgers
 /// Amount of ledgers to extend a persistent entry to when below threshold.
 const TTL_BUMP_AMOUNT: u32 = 518_400; // ~30 days at 5-second ledgers
 
-/// Maximum archived round summaries retained on-chain (FIFO pruning).
-const MAX_ARCHIVED_ROUNDS: u32 = 128;
+/// Default archived round summaries retained on-chain (FIFO pruning).
+const DEFAULT_ARCHIVE_RETENTION: u32 = 128;
+/// Minimum archive retention limit — prevents accidental pruning of all history.
+const MIN_ARCHIVE_RETENTION: u32 = 1;
+/// Maximum archive retention limit — prevents unbounded storage growth.
+const MAX_ARCHIVE_RETENTION: u32 = 10_000;
 /// Ledgers to wait before a scheduled critical config change may be applied (~2 hours).
 const CONFIG_TIMELOCK_LEDGERS: u32 = 1440;
 
@@ -332,8 +336,8 @@ impl VirtualTokenContract {
 
     /// Returns up to `limit` most recently archived rounds (newest first).
     ///
-    /// Pass `limit = 0` to receive an empty list. Values above [`MAX_ARCHIVED_ROUNDS`]
-    /// are capped automatically.
+    /// Pass `limit = 0` to receive an empty list. Values above the configured
+    /// archive retention limit are capped automatically.
     pub fn get_recent_archived_rounds(env: Env, limit: u32) -> Vec<ArchivedRoundSummary> {
         let env_ref = &env;
         let recent: Vec<u64> = env
@@ -347,8 +351,14 @@ impl VirtualTokenContract {
             return result;
         }
 
-        let fetch_cap = if limit > MAX_ARCHIVED_ROUNDS {
-            MAX_ARCHIVED_ROUNDS
+        let retention_limit = env
+            .storage()
+            .persistent()
+            .get::<_, u32>(&DataKey::ArchiveRetention)
+            .unwrap_or(DEFAULT_ARCHIVE_RETENTION);
+
+        let fetch_cap = if limit > retention_limit {
+            retention_limit
         } else {
             limit
         };
@@ -988,6 +998,49 @@ impl VirtualTokenContract {
     /// Returns the configured mint limit per ledger, or 0 if disabled.
     pub fn get_mint_limit(env: Env) -> u32 {
         env.storage().instance().get(&DataKey::MintLimitConfig).unwrap_or(0)
+    }
+
+    /// Sets the archive retention limit — the maximum number of ArchivedRound
+    /// entries retained on-chain before the oldest are pruned (FIFO) (admin only).
+    ///
+    /// Valid range: `MIN_ARCHIVE_RETENTION..=MAX_ARCHIVE_RETENTION` (1..=10_000).
+    /// Changes apply to future archive writes; existing entries are not
+    /// retroactively pruned on config change.
+    pub fn set_archive_retention(env: Env, limit: u32) -> Result<(), ContractError> {
+        Self::_require_supported_schema(&env)?;
+        let admin: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Admin)
+            .ok_or(ContractError::AdminNotSet)?;
+        admin.require_auth();
+        Self::_ensure_not_paused(&env)?;
+
+        if limit < MIN_ARCHIVE_RETENTION || limit > MAX_ARCHIVE_RETENTION {
+            return Err(ContractError::InvalidArchiveRetention);
+        }
+
+        let key = DataKey::ArchiveRetention;
+        env.storage().persistent().set(&key, &limit);
+        Self::_extend_persistent_ttl(&env, &key);
+
+        #[allow(deprecated)]
+        env.events().publish(
+            (symbol_short!("archive"), symbol_short!("retention")),
+            (limit,),
+        );
+
+        Ok(())
+    }
+
+    /// Returns the configured archive retention limit, or the protocol default (128) if unset.
+    pub fn get_archive_retention(env: Env) -> u32 {
+        let key = DataKey::ArchiveRetention;
+        Self::_extend_persistent_ttl(&env, &key);
+        env.storage()
+            .persistent()
+            .get(&key)
+            .unwrap_or(DEFAULT_ARCHIVE_RETENTION)
     }
 
     /// Returns user statistics (wins, losses, streaks)
@@ -2733,11 +2786,23 @@ impl VirtualTokenContract {
 
         recent.push_back(round.round_id);
 
-        while recent.len() > MAX_ARCHIVED_ROUNDS {
+        let retention_limit: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ArchiveRetention)
+            .unwrap_or(DEFAULT_ARCHIVE_RETENTION);
+
+        while recent.len() > retention_limit {
             if let Some(oldest) = recent.get(0) {
                 env.storage()
                     .persistent()
                     .remove(&DataKey::ArchivedRound(oldest));
+
+                #[allow(deprecated)]
+                env.events().publish(
+                    (symbol_short!("archive"), symbol_short!("pruned")),
+                    (oldest, retention_limit),
+                );
             }
             let mut trimmed = Vec::new(env);
             for i in 1..recent.len() {
